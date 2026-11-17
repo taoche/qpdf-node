@@ -52,10 +52,21 @@ export function writePdf(directory: string, fileName: string, markers: readonly 
 
 /** Returns the candidate markers present in the PDF at `path`, in file order. */
 export function markersIn(path: string, candidates: readonly string[]): string[] {
-  const text = readFileSync(path).toString("latin1");
+  return markersInBytes(readFileSync(path), candidates);
+}
+
+/** Like {@link markersIn}, for PDF bytes. Repeated markers are reported once. */
+export function markersInBytes(bytes: Uint8Array, candidates: readonly string[]): string[] {
+  const text = Buffer.from(bytes).toString("latin1");
   return candidates
     .map((marker) => ({ marker, position: text.indexOf(`(${marker})`) }))
     .filter((found) => found.position >= 0)
     .sort((left, right) => left.position - right.position)
     .map((found) => found.marker);
+}
+
+/** Every `(marker)` occurrence in the PDF bytes, in file order, duplicates included. */
+export function markerOccurrences(bytes: Uint8Array): string[] {
+  const text = Buffer.from(bytes).toString("latin1");
+  return [...text.matchAll(/\(([A-Z]+\d+)\) Tj/g)].map((match) => match[1] as string);
 }
