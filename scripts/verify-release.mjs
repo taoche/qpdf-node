@@ -1,13 +1,13 @@
 // Fails when the repository is not in a releasable state:
 //
-//   node scripts/verify-release.mjs [--tag v0.2.0]
+//   node scripts/verify-release.mjs [--tag v0.2.1]
 //
 // Checks that the workspace manifest, CMakeLists.txt and (when given) the git
 // tag agree on one version, and that the manifest is the one the release scripts
-// expect (name, private, no dependencies on platform packages: the release is one
-// package, qpdf-node, that bundles every platform's addon).
+// expect (name, private, no hand-written platform dependencies), and that the
+// workflow and the root package.json scripts agree with the platform table.
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 
@@ -29,7 +29,8 @@ if (manifest.private !== true) {
 for (const field of ["dependencies", "optionalDependencies"]) {
   if (manifest[field] !== undefined) {
     problems.push(
-      `packages/node/package.json must not list ${field}: qpdf-node is a single package that bundles every addon`,
+      `packages/node/package.json must not list ${field}: scripts/package-root.mjs adds the platform ` +
+        "packages as optionalDependencies to the staged package (they are not on the registry before a release)",
     );
   }
 }
@@ -60,6 +61,24 @@ for (const platform of platforms) {
   }
 }
 
+const rootScripts = JSON.parse(readFileSync(join(repositoryRoot, "package.json"), "utf8")).scripts;
+for (const [scriptName, scriptFile] of [
+  ["stage:addon", "stage-addon.mjs"],
+  ["package:platform", "package-platform.mjs"],
+  ["package:root", "package-root.mjs"],
+  ["smoke:packages", "smoke-test-packages.mjs"],
+  ["publish:packages", "publish-packages.mjs"],
+]) {
+  if (rootScripts[scriptName] !== `node scripts/${scriptFile}`) {
+    problems.push(
+      `package.json script ${scriptName} must be "node scripts/${scriptFile}". found=${rootScripts[scriptName]}`,
+    );
+  }
+  if (!existsSync(join(repositoryRoot, "scripts", scriptFile))) {
+    problems.push(`scripts/${scriptFile} does not exist (package.json script ${scriptName})`);
+  }
+}
+
 if (values.tag !== undefined && values.tag !== `v${manifest.version}`) {
   problems.push(
     `The tag does not match the package version. tag=${values.tag}, expected=v${manifest.version}`,
@@ -71,5 +90,5 @@ if (problems.length > 0) {
   process.exit(1);
 }
 console.log(
-  `Release check passed. version=${manifest.version}, package=qpdf-node, addons=${platforms.map((p) => p.addonFileName).join(",")}`,
+  `Release check passed. version=${manifest.version}, packages=${[...platforms.map((p) => p.name), "qpdf-node"].join(",")}`,
 );

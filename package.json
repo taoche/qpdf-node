@@ -1,7 +1,7 @@
 {
   "name": "qpdf-node-workspace",
   "private": true,
-  "description": "Workspace root for qpdf-node. The one published package, qpdf-node, is staged from packages/node by scripts/package-root.mjs.",
+  "description": "Workspace root for qpdf-node. The root package qpdf-node is staged from packages/node by scripts/package-root.mjs; its platform packages by scripts/package-platform.mjs.",
   "scripts": {
     "build": "pnpm --filter qpdf-node run build",
     "test": "pnpm --filter qpdf-node run test",
@@ -10,10 +10,11 @@
     "check": "prettier --check . && pnpm --filter qpdf-node run check",
     "format": "prettier --write .",
     "stage:addon": "node scripts/stage-addon.mjs",
+    "package:platform": "node scripts/package-platform.mjs",
     "package:root": "node scripts/package-root.mjs",
-    "smoke:package": "node scripts/smoke-test-package.mjs",
+    "smoke:packages": "node scripts/smoke-test-packages.mjs",
     "verify:release": "node scripts/verify-release.mjs",
-    "publish:package": "node scripts/publish-package.mjs"
+    "publish:packages": "node scripts/publish-packages.mjs"
   },
   "devDependencies": {
     "prettier": "^3.6.2"

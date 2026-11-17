@@ -1,5 +1,6 @@
 // Copies one built addon to its platform-specific file name, ready to be
-// uploaded as a CI artifact and bundled by package-root.mjs:
+// uploaded as a CI artifact and turned into a platform package by
+// package-platform.mjs --all:
 //
 //   node scripts/stage-addon.mjs [--target darwin-arm64] \
 //     [--addon packages/node/build/Release/qpdf_node.node] [--out build/addons]

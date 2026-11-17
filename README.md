@@ -10,11 +10,12 @@ Extract, merge and split PDF pages from Node.js and (experimentally) the browser
 
 No `qpdf` executable is spawned, and the stale third-party `qpdf-wasm` npm package is not used.
 
-> **Status: pre-release (0.2.0).** Not yet published to npm. The release workflow
-> (`.github/workflows/release.yml`) is written to publish one package with prebuilt addons for every
-> supported platform, but it has not run yet:
-> see [Releasing](#releasing) and [Platform support](#platform-support) for what is and is not verified.
-> This package replaces the earlier `pdq-node` (Rust/pdq); see
+> **Status: 0.2.1 (prepared, not yet released).** `qpdf-node@0.2.0` is on npm as a single bundled
+> package; 0.2.1 is the first release with per-platform packages (see
+> [0.2.0 versus 0.2.1](#020-versus-021)). The release workflow
+> (`.github/workflows/release.yml`) is written to build and test the prebuilt addons on every
+> supported platform, but has not run for 0.2.1 yet; see [Releasing](#releasing) and [Platform support](#platform-support) for what is and is not
+> verified. This package replaces the earlier `pdq-node` (Rust/pdq); see
 > [Changes from pdq-node](#changes-from-pdq-node).
 
 ## Install
@@ -23,32 +24,56 @@ No `qpdf` executable is spawned, and the stale third-party `qpdf-wasm` npm packa
 npm install qpdf-node
 ```
 
-`qpdf-node` is **one package** that contains the JavaScript, the type declarations and the native
-addon for every supported platform (see [Platform support](#platform-support)). There are no
-platform packages, no `optionalDependencies` and no install scripts, so `--omit=optional`,
-`--ignore-scripts` and copying `node_modules` between machines of the same platform all work. The
-package is **about 17 MB unpacked and 6-7 MB compressed** (five addons of roughly 3 MB each; the
-exact size is printed by `npm pack` and by `pnpm smoke:package`).
+That is the only package you install. You never choose a platform: `qpdf-node` lists one
+platform package per supported system in `optionalDependencies`, each marked with `os`, `cpu` and
+(on Linux) `libc`, so npm, pnpm and yarn download only the one that matches your machine. The
+platform packages (`qpdf-node-darwin-arm64`, `qpdf-node-darwin-x64`, `qpdf-node-linux-x64-gnu`,
+`qpdf-node-linux-arm64-gnu`, `qpdf-node-win32-x64-msvc`) are an implementation detail: they hold the
+native addon and have no API, so do not depend on them directly. There are no install scripts and no
+download at install time.
+
+Package sizes (measured on the darwin-arm64 package; the other four are expected to be similar
+since they are built from the same sources, but have not been measured):
+
+| Package                    | Compressed   | Unpacked     |
+| -------------------------- | ------------ | ------------ |
+| `qpdf-node` (root)         | about 31 kB  | about 94 kB  |
+| one platform package       | about 1.0 MB | about 2.6 MB |
+| what `npm install` fetches | about 1.0 MB | about 2.7 MB |
+
+The exact sizes are printed by `npm pack` and by `pnpm smoke:packages`.
+
+Install without optional dependencies (`--omit=optional`, `--no-optional`) or copy `node_modules`
+between platforms, and the platform package is missing: the loader then fails with an error that
+names the missing package. Reinstall on the target machine.
+
+### 0.2.0 versus 0.2.1
+
+- **`qpdf-node@0.2.0`** was published as one self-contained package that bundled all five addons
+  (roughly 17 MB unpacked and 6-7 MB compressed, an estimate from five addons of about 3 MB each) and had no `optionalDependencies`. It stays on npm
+  unchanged: npm versions are immutable.
+- **`qpdf-node@0.2.1` and later** use the layout above: a JavaScript-only root package plus one small
+  platform package per system. Installing is smaller and faster, and the API is identical. Nothing
+  in your code changes; just `npm install qpdf-node@latest`.
 
 At load time the addon is looked up in this order:
 
 1. `build/Release/qpdf_node.node` inside the package directory: a source checkout after
    `pnpm run build:native`. Published packages do not contain it.
-2. `native/qpdf_node.<target>.node` inside the package, chosen for the running Node.js (the names are
-   in the table below).
+2. The platform package for the running Node.js (`qpdf-node-<platform>-<arch>[-abi]`).
 
 A file that exists but fails to load is reported as is, and an unsupported platform gets an error
-that lists the bundled addons.
+that lists the supported packages.
 
 ## Platform support
 
-| Bundled file (`native/`)         | OS / CPU             | Built on GitHub runner | Notes                                               |
-| -------------------------------- | -------------------- | ---------------------- | --------------------------------------------------- |
-| `qpdf_node.darwin-arm64.node`    | macOS, Apple silicon | `macos-15`             | Locally built and tested. Minimum macOS 12.         |
-| `qpdf_node.darwin-x64.node`      | macOS, Intel         | `macos-15-intel`       | Built by CI only. Minimum macOS 12.                 |
-| `qpdf_node.linux-x64-gnu.node`   | Linux x64, glibc     | `ubuntu-22.04`         | Built by CI only. glibc 2.35 or newer.              |
-| `qpdf_node.linux-arm64-gnu.node` | Linux arm64, glibc   | `ubuntu-22.04-arm`     | Built by CI only. glibc 2.35 or newer.              |
-| `qpdf_node.win32-x64-msvc.node`  | Windows x64          | `windows-2022`         | Built by CI only. Needs the Microsoft VC++ runtime. |
+| Platform package (installed automatically) | OS / CPU             | Built on GitHub runner | Notes                                               |
+| ------------------------------------------ | -------------------- | ---------------------- | --------------------------------------------------- |
+| `qpdf-node-darwin-arm64`                   | macOS, Apple silicon | `macos-15`             | Locally built and tested. Minimum macOS 12.         |
+| `qpdf-node-darwin-x64`                     | macOS, Intel         | `macos-15-intel`       | Built by CI only. Minimum macOS 12.                 |
+| `qpdf-node-linux-x64-gnu`                  | Linux x64, glibc     | `ubuntu-22.04`         | Built by CI only. glibc 2.35 or newer.              |
+| `qpdf-node-linux-arm64-gnu`                | Linux arm64, glibc   | `ubuntu-22.04-arm`     | Built by CI only. glibc 2.35 or newer.              |
+| `qpdf-node-win32-x64-msvc`                 | Windows x64          | `windows-2022`         | Built by CI only. Needs the Microsoft VC++ runtime. |
 
 **Not supported:** musl Linux (Alpine), 32-bit systems, Windows arm64, FreeBSD. The loader reports
 these as unsupported (musl is detected and is not mistaken for glibc); build from source there.
@@ -253,20 +278,24 @@ verified in a browser.
 
 ## Releasing
 
-The release is **one npm package, `qpdf-node`**, holding the compiled TypeScript and all five
-addons in `native/` (see the [table above](#platform-support)). Expect roughly 17 MB unpacked and
-6-7 MB compressed.
+Six packages, all at the same version: the five platform packages of the
+[table above](#platform-support) and the root `qpdf-node`. The root lists every platform package in
+`optionalDependencies` at that exact version; npm installs only the one whose `os`, `cpu` and `libc`
+fields match the machine. The root contains no binary, and each platform package contains one
+`qpdf_node.node`, `LICENSE` and `THIRD_PARTY_NOTICES.md` (qpdf's Apache-2.0 license and notices).
 
-The workspace manifest `packages/node/package.json` is `private`. The published package is staged by
-checked-in scripts into `build/npm/qpdf-node`:
+The workspace manifest `packages/node/package.json` is `private` and does not list the platform
+packages (they are not on the registry before a release, so `pnpm install --frozen-lockfile` could not
+resolve them). Published packages are instead staged by checked-in scripts into `build/npm/`:
 
-| Command                                                     | What it does                                                                                                                                                                     |
-| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm verify:release [--tag vX.Y.Z]`                        | Checks that package version, `CMakeLists.txt` version, the tag, the repository URL and the workflow's runner list agree.                                                         |
-| `pnpm stage:addon [--target T] [--addon F] [--out D]`       | Copies a built addon to `D/qpdf_node.<T>.node` (defaults: this machine, the built addon, `build/addons`).                                                                        |
-| `pnpm --filter qpdf-node run build:ts && pnpm package:root` | Stages `qpdf-node` into `build/npm`: compiled JS and declarations, `native/` with **all five** addons from `build/addons`, license files, README. Fails if any addon is missing. |
-| `pnpm smoke:package --package DIR`                          | Packs the staged package, checks the tarball contents, installs the tarball into an empty project with no `build/`, runs a PDF operation and checks which addon file loaded.     |
-| `pnpm publish:package [--dir build/npm] [--dry-run]`        | Publishes `qpdf-node` (skipped if that version is already on the registry).                                                                                                      |
+| Command                                                     | What it does                                                                                                                                                                   |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm verify:release [--tag vX.Y.Z]`                        | Checks that package version, `CMakeLists.txt` version, the tag, the repository URL, the root scripts and the workflow's runner list agree.                                     |
+| `pnpm stage:addon [--target T] [--addon F] [--out D]`       | Copies a built addon to `D/qpdf_node.<T>.node` (the CI artifact name; defaults: this machine, built addon, `build/addons`).                                                    |
+| `pnpm package:platform --all --addons D [--out build/npm]`  | Stages all five `qpdf-node-<T>` packages from `D/qpdf_node.<T>.node`; fails if one is missing. `--target T [--addon F]` stages one.                                            |
+| `pnpm --filter qpdf-node run build:ts && pnpm package:root` | Stages `qpdf-node` (compiled JS, declarations, license files, `optionalDependencies`). It contains no binary.                                                                  |
+| `pnpm smoke:packages --root DIR --platform DIR`             | Packs the root and one platform package, installs both into an empty project with no `build/`, runs a PDF operation and checks the addon was loaded from the platform package. |
+| `pnpm publish:packages [--dir build/npm] [--dry-run]`       | Publishes the five platform packages first and `qpdf-node` last; skips versions already on the registry.                                                                       |
 
 To cut a release: bump `version` in `packages/node/package.json` **and** `project(... VERSION ...)` in
 `CMakeLists.txt`, merge, then push the tag `vX.Y.Z`. The workflow `release.yml` then:
@@ -274,18 +303,20 @@ To cut a release: bump `version` in `packages/node/package.json` **and** `projec
 1. `prepare`: `pnpm check` and `verify:release`.
 2. `build-native` (one job per platform, in parallel): `pnpm build`, `pnpm test` against the built
    addon, then uploads the addon as `qpdf_node.<target>.node` (artifact `addon-<target>`).
-3. `package`: downloads all five addons, builds the TypeScript and stages the single `qpdf-node`
-   package (artifact `qpdf-node`).
-4. `test-artifacts` (per platform, Node.js 20): downloads that package, packs it, installs the tarball
-   into an empty project and runs `smoke:package`. This proves the package layout and the loader on
-   each supported runner, not just the build.
-5. `publish`: publishes `qpdf-node`. A failure in any earlier job stops the release before anything is
-   published. Versions with a prerelease suffix (`0.3.0-rc.1`) are published under the `next` dist-tag.
+3. `package`: downloads all five addons, builds the TypeScript and stages the five platform packages
+   and the root package (artifact `npm-packages`).
+4. `test-artifacts` (per platform, Node.js 20): downloads the packages, packs the root and that
+   platform's package, installs both into an empty project and runs `smoke:packages`. This proves the
+   package layout and the loader on each supported runner, not just the build.
+5. `publish`: publishes the five platform packages, then `qpdf-node`. A failure in any earlier job
+   stops the release before anything is published. If a publish fails part-way, fix the cause and
+   re-run the job: versions already published are skipped. Versions with a prerelease suffix
+   (`0.3.0-rc.1`) are published under the `next` dist-tag.
 6. `wasm-build` runs independently (see [WebAssembly build](#webassembly-build)); it is not part of
-   the npm package.
+   the npm packages.
 
-Running the workflow by hand (Actions, "Run workflow") does steps 1-4 and `npm publish --dry-run`.
-It publishes nothing and needs no npm credentials.
+Running the workflow by hand (Actions, "Run workflow") does steps 1-4 and `npm publish --dry-run` of
+all six packages. It publishes nothing and needs no npm credentials.
 
 The staged `repository`, `homepage` and `bugs` fields point at `taoche/qpdf-node`
 (`QPDF_NODE_REPOSITORY_URL` or `GITHUB_REPOSITORY` overrides `repository`). npm provenance requires the
@@ -294,11 +325,12 @@ published `repository` to match the repository that runs the workflow.
 ### What was and was not validated locally
 
 Validated on macOS arm64: `pnpm install --frozen-lockfile`, `pnpm check`, `pnpm build`, `pnpm test`,
-`verify:release`, `stage:addon`, `package:root`, `npm pack --dry-run`, `publish:package --dry-run`, and
-`smoke:package` (the tarball installed into an empty project; the addon loads from
-`node_modules/qpdf-node/native/qpdf_node.darwin-arm64.node`). Locally the other four addon files were
-stand-in copies of the arm64 addon, so the package size printed locally (about 13 MB unpacked, 5 MB
-compressed) is not the real one, and only the darwin-arm64 selection was exercised end to end. The
+`verify:release`, `stage:addon`, `package:platform --all`, `package:root`, `publish:packages --dry-run`
+(all six packages), and `smoke:packages` (root and `qpdf-node-darwin-arm64` tarballs installed into an
+empty project; the addon loads from `node_modules/qpdf-node-darwin-arm64/qpdf_node.node`). Installing
+only the root tarball, with its five platform packages redirected to local tarballs, installed just the
+darwin-arm64 one, which shows npm's `os`/`cpu` selection. Locally the other four addon files were
+stand-in copies of the arm64 addon, so only the darwin-arm64 selection was exercised end to end. The
 loader's choice for the other targets and for musl is covered by unit tests with a fake file system.
 
 **Not validated locally:** the Linux, Windows and macOS x64 builds, the per-runner tarball smoke
@@ -311,19 +343,19 @@ manual "Run workflow" dry run before pushing a tag.
 
 ### npm credentials
 
-Only `qpdf-node` is published. Two options:
+All five platform packages and `qpdf-node` must be publishable by the workflow. Two options:
 
-- **Token (needed for the first publish).** Create a granular access token on npmjs.com that may
-  publish `qpdf-node` (for a package that does not exist yet, npm needs a token allowed to create new
-  packages, for example scoped to all packages, which you can narrow afterwards) and store it as the
-  repository secret `NPM_TOKEN`. The workflow passes it only to the publish step as `NODE_AUTH_TOKEN`;
-  npm does not print it. Use an account with 2FA enforced for publishing "authorization only", or an
-  automation token, since CI cannot enter a one-time password.
-- **Trusted publishing (recommended after the first release).** In the package's settings on npmjs.com,
-  add a GitHub Actions trusted publisher: this repository and workflow file `release.yml`. Trusted
-  publishers can only be added to packages that already exist, hence the token for the first release.
-  The publish job has `id-token: write` and runs Node.js 24 (npm 11.5.1 or newer, as trusted
-  publishing requires); once configured, delete `NPM_TOKEN`. On tag pushes the scripts pass
+- **Token (needed for the first publish of the platform packages).** The platform package names do not
+  exist yet, so the token must be allowed to create new packages (for example a granular token
+  with read/write on all packages, which you can narrow afterwards) and also publish `qpdf-node`.
+  Store it as the repository secret `NPM_TOKEN`. The workflow passes it only to the publish step as
+  `NODE_AUTH_TOKEN`; npm does not print it. Use an account with 2FA enforced for publishing
+  "authorization only", or an automation token, since CI cannot enter a one-time password.
+- **Trusted publishing (recommended after the first release).** In each package's settings on
+  npmjs.com, add a GitHub Actions trusted publisher: this repository and workflow file `release.yml`.
+  Trusted publishers can only be added to packages that already exist, hence the token for the first
+  release. The publish job has `id-token: write` and runs Node.js 24 (npm 11.5.1 or newer, as
+  trusted publishing requires); once configured, delete `NPM_TOKEN`. On tag pushes the scripts pass
   `--provenance`.
 
 The workflow does not create a GitHub release and uses no other secrets.
@@ -372,8 +404,9 @@ native/node/               N-API addon (node-addon-api): addon.cc, CMakeLists.tx
 native/wasm/               Emscripten module: wasm_bindings.cc, qpdf-worker.mjs, smoke-test.mjs
 packages/node/             The "qpdf-node" TypeScript wrapper (src/native-loader.ts finds the addon) and tests
 scripts/                   generate-third-party-notices.mjs; release scripts (release-lib, stage-addon,
-                           package-root, smoke-test-package, verify-release, publish-package)
-.github/workflows/         release.yml: build the five addons, stage, test and publish the one package
+                           package-platform, package-root, smoke-test-packages, verify-release,
+                           publish-packages)
+.github/workflows/         release.yml: build the five addons, stage, test and publish six packages
 ```
 
 ## License

@@ -1,6 +1,7 @@
 // Shared helpers for the release scripts: the supported platform table, the
 // source manifest, and the reading of the repository's version. The release is
-// one npm package, qpdf-node, that bundles one addon per supported platform.
+// the root package qpdf-node (JavaScript only) plus one package per platform that
+// holds that platform's addon; the root lists them as optionalDependencies.
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -9,21 +10,26 @@ import { fileURLToPath } from "node:url";
 export const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const packageDirectory = join(repositoryRoot, "packages", "node");
 
-/**
- * Every prebuilt target. `addonFileName` is the file the qpdf-node package
- * bundles in its `native/` directory for it and must equal what
- * packages/node/src/native-loader.ts looks for at run time (a test checks this).
- * `runner` is the GitHub Actions runner that builds it.
- */
+/** The file name of the addon in the CI artifact that carries it from the build job to staging. */
 export function addonFileNameFor(target) {
   return `qpdf_node.${target}.node`;
 }
 
-/** The directory inside the published package that holds the bundled addons. */
-export const bundledAddonDirectoryName = "native";
-
+/**
+ * Every prebuilt target. `name` is the npm package that holds the addon for it
+ * and must equal what packages/node/src/native-loader.ts computes at run time
+ * (a test checks this). `runner` is the GitHub Actions runner that builds it.
+ */
 function definePlatform(target, os, cpu, libc, runner) {
-  return { target, addonFileName: addonFileNameFor(target), os, cpu, libc, runner };
+  return {
+    target,
+    name: `qpdf-node-${target}`,
+    addonFileName: addonFileNameFor(target),
+    os,
+    cpu,
+    libc,
+    runner,
+  };
 }
 
 export const platforms = [

@@ -1,10 +1,12 @@
-# Builds the native addon on every supported platform, bundles all five addons
-# into ONE npm package (qpdf-node), smoke-tests that package's tarball on every
-# platform, and publishes it.
+# Builds the native addon on every supported platform, stages the root package
+# qpdf-node (JavaScript only) and five platform packages (qpdf-node-<target>,
+# one addon each), smoke-tests root + platform package on every platform, and
+# publishes the platform packages first and the root package last. Users install
+# only qpdf-node; npm picks the platform package from optionalDependencies.
 #
 #   - Push a tag `vX.Y.Z` that matches packages/node/package.json: build, test, publish.
-#   - Run manually (workflow_dispatch): the same builds and tests, then `npm publish --dry-run`.
-#     Nothing is published and no npm credentials are used.
+#   - Run manually (workflow_dispatch): the same builds and tests, then `npm publish --dry-run`
+#     of all six packages. Nothing is published and no npm credentials are used.
 #
 # The runner for each target must match scripts/release-lib.mjs
 # (`node scripts/verify-release.mjs` checks this). See README.md, "Releasing".
@@ -104,7 +106,7 @@ jobs:
           if-no-files-found: error
 
   package:
-    name: Stage the qpdf-node package
+    name: Stage the root and platform packages
     needs: [prepare, build-native]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -123,12 +125,14 @@ jobs:
           pattern: addon-*
           path: build/addons
           merge-multiple: true
-      - name: Stage one package holding all five addons
-        run: node scripts/package-root.mjs --addons build/addons --out build/npm
+      - name: Stage the five platform packages
+        run: node scripts/package-platform.mjs --all --addons build/addons --out build/npm
+      - name: Stage the root package
+        run: node scripts/package-root.mjs --out build/npm
       - uses: actions/upload-artifact@v4
         with:
-          name: qpdf-node
-          path: build/npm/qpdf-node
+          name: npm-packages
+          path: build/npm
           if-no-files-found: error
 
   test-artifacts:
@@ -158,10 +162,13 @@ jobs:
           node-version: 20
       - uses: actions/download-artifact@v4
         with:
-          name: qpdf-node
-          path: build/npm/qpdf-node
-      - name: Pack the staged package, install the tarball, and run a PDF operation
-        run: node scripts/smoke-test-package.mjs --package build/npm/qpdf-node
+          name: npm-packages
+          path: build/npm
+      - name: Pack the root and this platform's package, install both, and run a PDF operation
+        run: >
+          node scripts/smoke-test-packages.mjs
+          --root build/npm/qpdf-node
+          --platform build/npm/qpdf-node-${{ matrix.target }}
 
   publish:
     name: Publish (dry run unless this is a tag push)
@@ -180,17 +187,17 @@ jobs:
           registry-url: https://registry.npmjs.org
       - uses: actions/download-artifact@v4
         with:
-          name: qpdf-node
-          path: build/npm/qpdf-node
-      - name: Publish dry run (manual run)
+          name: npm-packages
+          path: build/npm
+      - name: Publish dry run of all six packages (manual run)
         if: github.event_name != 'push'
-        run: node scripts/publish-package.mjs --dir build/npm --dry-run
-      - name: Publish qpdf-node (tag push)
+        run: node scripts/publish-packages.mjs --dir build/npm --dry-run
+      - name: Publish the platform packages, then qpdf-node (tag push)
         if: github.event_name == 'push'
         env:
           # Empty when the repository uses npm trusted publishing instead of a token.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: node scripts/publish-package.mjs --dir build/npm
+        run: node scripts/publish-packages.mjs --dir build/npm
 
   # WebAssembly is built and smoke-tested under Node.js, then offered as a
   # workflow artifact only. It is not published, no npm package depends on it, and

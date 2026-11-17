@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(qpdf_node VERSION 0.2.0 LANGUAGES C CXX)
+project(qpdf_node VERSION 0.2.1 LANGUAGES C CXX)
 
 # One shared C++ core (native/core) on top of qpdf, with two bindings:
 #   QPDF_NODE_BUILD_ADDON  Node.js N-API addon (native/node), built by cmake-js.
