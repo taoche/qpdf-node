@@ -25,3 +25,9 @@ target_compile_definitions(qpdf_node PRIVATE
   # rejected promises.
   NAPI_DISABLE_CPP_EXCEPTIONS)
 target_link_libraries(qpdf_node PRIVATE pdf_core ${CMAKE_JS_LIB})
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  # Prebuilt addons must run on distributions older than the build machine:
+  # keep the GCC runtime out of the dependency list (only glibc stays dynamic).
+  target_link_options(qpdf_node PRIVATE -static-libstdc++ -static-libgcc)
+endif()

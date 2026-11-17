@@ -1,0 +1,206 @@
+# Builds the native addon on every supported platform, smoke-tests the packaged
+# result, and publishes the platform packages followed by the root package.
+#
+#   - Push a tag `vX.Y.Z` that matches packages/node/package.json: build, test, publish.
+#   - Run manually (workflow_dispatch): the same builds and tests, then `npm publish --dry-run`.
+#     Nothing is published and no npm credentials are used.
+#
+# The runner for each target must match scripts/release-lib.mjs
+# (`node scripts/verify-release.mjs` checks this). See README.md, "Releasing".
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Check and stage the root package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - name: Verify version consistency (tag push)
+        if: github.event_name == 'push'
+        run: node scripts/verify-release.mjs --tag "$GITHUB_REF_NAME"
+      - name: Verify version consistency (manual run)
+        if: github.event_name != 'push'
+        run: node scripts/verify-release.mjs
+      - run: pnpm --filter qpdf-node run build:ts
+      - run: node scripts/package-root.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qpdf-node
+          path: build/npm/qpdf-node
+          if-no-files-found: error
+
+  build-native:
+    name: Build ${{ matrix.target }}
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: darwin-arm64
+            runner: macos-14
+          - target: darwin-x64
+            runner: macos-15-intel
+          - target: linux-x64-gnu
+            runner: ubuntu-22.04
+          - target: linux-arm64-gnu
+            runner: ubuntu-22.04-arm
+          - target: win32-x64-msvc
+            runner: windows-2022
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Use GCC 12 and an old-glibc baseline (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-12 gcc-12
+          echo "CC=gcc-12" >> "$GITHUB_ENV"
+          echo "CXX=g++-12" >> "$GITHUB_ENV"
+      - name: Set the minimum macOS version
+        if: runner.os == 'macOS'
+        run: echo "MACOSX_DEPLOYMENT_TARGET=12.0" >> "$GITHUB_ENV"
+      - run: pnpm install --frozen-lockfile
+      - name: Build the addon and the TypeScript package
+        run: pnpm build
+      - name: Test against the built addon
+        run: pnpm test
+      - name: Show what the addon links against
+        run: |
+          addon=packages/node/build/Release/qpdf_node.node
+          case "$RUNNER_OS" in
+            Linux) ldd "$addon" ;;
+            macOS) otool -L "$addon" ;;
+            Windows) echo "(no dumpbin check on Windows)" ;;
+          esac
+      - name: Stage the platform package
+        run: node scripts/package-platform.mjs --target "${{ matrix.target }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qpdf-node-${{ matrix.target }}
+          path: build/npm/qpdf-node-${{ matrix.target }}
+          if-no-files-found: error
+
+  test-artifacts:
+    name: Test packaged ${{ matrix.target }}
+    needs: [prepare, build-native]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: darwin-arm64
+            runner: macos-14
+          - target: darwin-x64
+            runner: macos-15-intel
+          - target: linux-x64-gnu
+            runner: ubuntu-22.04
+          - target: linux-arm64-gnu
+            runner: ubuntu-22.04-arm
+          - target: win32-x64-msvc
+            runner: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      # The oldest supported Node.js, with a fresh project that has no build directory.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/download-artifact@v4
+        with:
+          name: qpdf-node
+          path: build/npm/qpdf-node
+      - uses: actions/download-artifact@v4
+        with:
+          name: qpdf-node-${{ matrix.target }}
+          path: build/npm/qpdf-node-${{ matrix.target }}
+      - name: Install the packaged root and platform packages and run a PDF operation
+        run: >
+          node scripts/smoke-test-packages.mjs
+          --root build/npm/qpdf-node
+          --platform build/npm/qpdf-node-${{ matrix.target }}
+
+  publish:
+    name: Publish (dry run unless this is a tag push)
+    needs: [prepare, build-native, test-artifacts]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write # npm provenance and trusted publishing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # npm >= 11.5.1 (bundled with Node.js 24) is needed for trusted publishing.
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: qpdf-node*
+          path: build/npm
+      - name: Publish dry run (manual run)
+        if: github.event_name != 'push'
+        run: node scripts/publish-packages.mjs --dir build/npm --dry-run
+      - name: Publish platform packages, then qpdf-node (tag push)
+        if: github.event_name == 'push'
+        env:
+          # Empty when the repository uses npm trusted publishing instead of a token.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: node scripts/publish-packages.mjs --dir build/npm
+
+  # WebAssembly is built and smoke-tested under Node.js, then offered as a
+  # workflow artifact only. It is not published, no npm package depends on it, and
+  # the publish job does not wait for it. It has not been run in a browser.
+  wasm-build:
+    name: Build WebAssembly (artifact only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          # Developed with the emcc found on the author's machine; pin a version here once one is chosen.
+          version: latest
+      - run: emcmake cmake -S . -B build/wasm -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build/wasm --target qpdf_wasm
+      - run: node native/wasm/smoke-test.mjs build/wasm/qpdf-core.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qpdf-wasm-build
+          path: |
+            build/wasm/qpdf-core.mjs
+            build/wasm/qpdf-core.wasm
+            native/wasm/qpdf-worker.mjs
+          if-no-files-found: error

@@ -12,13 +12,6 @@
   "license": "MIT AND Apache-2.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": [
-    "dist",
-    "build/Release/qpdf_node.node",
-    "LICENSE",
-    "THIRD_PARTY_NOTICES.md",
-    "README.md"
-  ],
   "engines": {
     "node": ">=20"
   },
@@ -29,8 +22,7 @@
     "build": "pnpm run build:native && pnpm run build:ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test __tests__/*.test.ts",
-    "check": "pnpm run typecheck",
-    "prepack": "node scripts/copy-legal-files.mjs"
+    "check": "pnpm run typecheck"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
@@ -38,5 +30,6 @@
     "node-addon-api": "^8.5.0",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0"
-  }
+  },
+  "private": true
 }

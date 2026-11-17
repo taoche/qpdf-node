@@ -4,8 +4,3 @@ dist/
 *.node
 *.tsbuildinfo
 .DS_Store
-
-# Copied from the repository root by `prepack`.
-packages/node/LICENSE
-packages/node/THIRD_PARTY_NOTICES.md
-packages/node/README.md

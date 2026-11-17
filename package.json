@@ -8,7 +8,12 @@
     "build:wasm": "emcmake cmake -S . -B build/wasm -DCMAKE_BUILD_TYPE=Release && cmake --build build/wasm --target qpdf_wasm",
     "test:wasm": "node native/wasm/smoke-test.mjs build/wasm/qpdf-core.mjs",
     "check": "prettier --check . && pnpm --filter qpdf-node run check",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "package:platform": "node scripts/package-platform.mjs",
+    "package:root": "node scripts/package-root.mjs",
+    "smoke:packages": "node scripts/smoke-test-packages.mjs",
+    "verify:release": "node scripts/verify-release.mjs",
+    "publish:packages": "node scripts/publish-packages.mjs"
   },
   "devDependencies": {
     "prettier": "^3.6.2"
