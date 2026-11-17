@@ -40,7 +40,7 @@ that lists the supported packages.
 
 | npm package                 | OS / CPU             | Built on GitHub runner | Notes                                               |
 | --------------------------- | -------------------- | ---------------------- | --------------------------------------------------- |
-| `qpdf-node-darwin-arm64`    | macOS, Apple silicon | `macos-14`             | Locally built and tested. Minimum macOS 12.         |
+| `qpdf-node-darwin-arm64`    | macOS, Apple silicon | `macos-15`             | Locally built and tested. Minimum macOS 12.         |
 | `qpdf-node-darwin-x64`      | macOS, Intel         | `macos-15-intel`       | Built by CI only. Minimum macOS 12.                 |
 | `qpdf-node-linux-x64-gnu`   | Linux x64, glibc     | `ubuntu-22.04`         | Built by CI only. glibc 2.35 or newer.              |
 | `qpdf-node-linux-arm64-gnu` | Linux arm64, glibc   | `ubuntu-22.04-arm`     | Built by CI only. glibc 2.35 or newer.              |

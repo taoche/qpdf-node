@@ -18,7 +18,7 @@ function definePlatform(target, os, cpu, libc, runner) {
 }
 
 export const platforms = [
-  definePlatform("darwin-arm64", "darwin", "arm64", null, "macos-14"),
+  definePlatform("darwin-arm64", "darwin", "arm64", null, "macos-15"),
   definePlatform("darwin-x64", "darwin", "x64", null, "macos-15-intel"),
   definePlatform("linux-x64-gnu", "linux", "x64", "glibc", "ubuntu-22.04"),
   definePlatform("linux-arm64-gnu", "linux", "arm64", "glibc", "ubuntu-22.04-arm"),
