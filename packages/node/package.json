@@ -10,6 +10,14 @@
     "n-api"
   ],
   "license": "MIT AND Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/taoche/pdq-node.git"
+  },
+  "bugs": {
+    "url": "https://github.com/taoche/pdq-node/issues"
+  },
+  "homepage": "https://github.com/taoche/pdq-node#readme",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "engines": {
