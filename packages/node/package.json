@@ -12,12 +12,12 @@
   "license": "MIT AND Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/taoche/pdq-node.git"
+    "url": "git+https://github.com/taoche/qpdf-node.git"
   },
   "bugs": {
-    "url": "https://github.com/taoche/pdq-node/issues"
+    "url": "https://github.com/taoche/qpdf-node/issues"
   },
-  "homepage": "https://github.com/taoche/pdq-node#readme",
+  "homepage": "https://github.com/taoche/qpdf-node#readme",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "engines": {
