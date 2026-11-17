@@ -1,7 +1,7 @@
-import { PdqError } from "./errors";
+import { QpdfError } from "./errors";
 
-export function invalidArgument(message: string): PdqError {
-  return new PdqError("INVALID_ARGUMENT", message);
+export function invalidArgument(message: string): QpdfError {
+  return new QpdfError("INVALID_ARGUMENT", message);
 }
 
 export function describe(value: unknown): string {

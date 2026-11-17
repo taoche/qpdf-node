@@ -1,30 +1,32 @@
-export type PdqErrorCode = "INVALID_ARGUMENT" | "OPERATION_FAILED";
+export type QpdfErrorCode = "INVALID_ARGUMENT" | "OPERATION_FAILED";
 
 /**
  * The only error type this package rejects with.
  *
- * - `INVALID_ARGUMENT`: the options were rejected before or while validating,
- *   and no output was written.
- * - `OPERATION_FAILED`: pdq could not read an input or write an output (missing
+ * - `INVALID_ARGUMENT`: the request was rejected before any output was written
+ *   (wrong type, empty path, bad page range syntax, page 0 or repeated, output
+ *   equal to an input, use after `close()`).
+ * - `OPERATION_FAILED`: qpdf could not read an input or write an output (missing
  *   file, not a PDF, page out of bounds, wrong password, unwritable directory).
  */
-export class PdqError extends Error {
-  readonly code: PdqErrorCode;
+export class QpdfError extends Error {
+  readonly code: QpdfErrorCode;
 
-  constructor(code: PdqErrorCode, message: string, options?: { cause?: unknown }) {
+  constructor(code: QpdfErrorCode, message: string, options?: { cause?: unknown }) {
     super(message, options);
-    this.name = "PdqError";
+    this.name = "QpdfError";
     this.code = code;
   }
 }
 
-/** napi-rs reports the Rust-side status name (`InvalidArg`, `GenericFailure`) as `code`. */
-export function toPdqError(error: unknown): PdqError {
-  if (error instanceof PdqError) {
+/** The native addon rejects with an Error whose `code` is already a {@link QpdfErrorCode}. */
+export function toQpdfError(error: unknown): QpdfError {
+  if (error instanceof QpdfError) {
     return error;
   }
   const message = error instanceof Error ? error.message : String(error);
   const nativeCode = (error as { code?: unknown } | null)?.code;
-  const code: PdqErrorCode = nativeCode === "InvalidArg" ? "INVALID_ARGUMENT" : "OPERATION_FAILED";
-  return new PdqError(code, message, { cause: error });
+  const code: QpdfErrorCode =
+    nativeCode === "INVALID_ARGUMENT" ? "INVALID_ARGUMENT" : "OPERATION_FAILED";
+  return new QpdfError(code, message, { cause: error });
 }

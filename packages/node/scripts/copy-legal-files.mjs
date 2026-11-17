@@ -8,6 +8,6 @@ import { fileURLToPath } from "node:url";
 const packageDirectory = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = join(packageDirectory, "..", "..");
 
-for (const fileName of ["LICENSE", "LICENSE-ARTISTIC-2.0", "THIRD_PARTY_NOTICES.md", "README.md"]) {
+for (const fileName of ["LICENSE", "THIRD_PARTY_NOTICES.md", "README.md"]) {
   copyFileSync(join(repositoryRoot, fileName), join(packageDirectory, fileName));
 }

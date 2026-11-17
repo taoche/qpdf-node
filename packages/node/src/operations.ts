@@ -1,5 +1,6 @@
-import * as native from "../native";
-import { toPdqError } from "./errors";
+import type * as binding from "./native-binding";
+import { native } from "./native";
+import { toQpdfError } from "./errors";
 import {
   invalidArgument,
   optionalPositiveUint32,
@@ -13,10 +14,12 @@ export interface MergeInputOptions {
   /** Path to the input PDF. Relative paths are relative to the process working directory. */
   path: string;
   /**
-   * pdq page range selecting pages of this input, in output order: `"1-3"`,
+   * Page range selecting pages of this input, in output order: `"1-3"`,
    * `"4-z"`, `"r1"`, `"7-3,1"`. Pages are 1-based, `z` is the last page, `rN` is
-   * the Nth page from the end, `7-3` runs backwards, and commas combine parts.
-   * Out-of-bounds pages are an error. Omit to take every page.
+   * the Nth page from the end (`r1` is the last), `7-3` runs backwards, and
+   * commas combine parts in the order written. A page may be listed more than
+   * once. Bad syntax rejects with `INVALID_ARGUMENT`; out-of-bounds pages reject
+   * with `OPERATION_FAILED` and are never clamped. Omit to take every page.
    */
   pages?: string;
 }
@@ -61,13 +64,13 @@ export interface PageCountOptions {
  * Concatenates PDFs into one unencrypted PDF.
  *
  * The work runs on the libuv thread pool, not on the event loop. Rejects with
- * {@link PdqError}.
+ * {@link QpdfError}.
  */
 export async function merge(options: MergeOptions): Promise<void> {
   try {
     await native.mergeNative(parseMergeOptions(options));
   } catch (error) {
-    throw toPdqError(error);
+    throw toQpdfError(error);
   }
 }
 
@@ -77,29 +80,29 @@ export async function merge(options: MergeOptions): Promise<void> {
  * {@link SplitPagesOptions.outputPattern}.
  *
  * The work runs on the libuv thread pool, not on the event loop. Rejects with
- * {@link PdqError}.
+ * {@link QpdfError}.
  */
 export async function splitPages(options: SplitPagesOptions): Promise<void> {
   try {
     await native.splitPagesNative(parseSplitPagesOptions(options));
   } catch (error) {
-    throw toPdqError(error);
+    throw toQpdfError(error);
   }
 }
 
 /**
  * Counts pages by walking the page tree (not by trusting the `/Count` entry).
- * Rejects with {@link PdqError}.
+ * Rejects with {@link QpdfError}.
  */
 export async function pageCount(options: PageCountOptions): Promise<number> {
   try {
     return await native.pageCountNative(parsePageCountOptions(options));
   } catch (error) {
-    throw toPdqError(error);
+    throw toQpdfError(error);
   }
 }
 
-function parseMergeOptions(options: unknown): native.NativeMergeOptions {
+function parseMergeOptions(options: unknown): binding.NativeMergeOptions {
   const fields = requireObject("merge options", options);
   const inputs = fields.inputs;
   if (!Array.isArray(inputs)) {
@@ -112,7 +115,7 @@ function parseMergeOptions(options: unknown): native.NativeMergeOptions {
   };
 }
 
-function parseMergeInput(label: string, input: unknown): native.NativeMergeInput {
+function parseMergeInput(label: string, input: unknown): binding.NativeMergeInput {
   if (typeof input === "string") {
     return { path: requireNonEmptyString(label, input) };
   }
@@ -123,7 +126,7 @@ function parseMergeInput(label: string, input: unknown): native.NativeMergeInput
   };
 }
 
-function parseSplitPagesOptions(options: unknown): native.NativeSplitPagesOptions {
+function parseSplitPagesOptions(options: unknown): binding.NativeSplitPagesOptions {
   const fields = requireObject("splitPages options", options);
   return {
     input: requireNonEmptyString("splitPages options.input", fields.input),
@@ -133,7 +136,7 @@ function parseSplitPagesOptions(options: unknown): native.NativeSplitPagesOption
   };
 }
 
-function parsePageCountOptions(options: unknown): native.NativePageCountOptions {
+function parsePageCountOptions(options: unknown): binding.NativePageCountOptions {
   const fields = requireObject("pageCount options", options);
   return {
     input: requireNonEmptyString("pageCount options.input", fields.input),

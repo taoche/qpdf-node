@@ -44,6 +44,40 @@ describe("merge", () => {
     assert.deepEqual(markersIn(output, ALL_MARKERS), ["A3", "A1", "B2"]);
   });
 
+  it("resolves page ranges: z, rN, reversed ranges, and comma-separated parts", async () => {
+    const input = writePdf(directory, "ranges.pdf", ["A1", "A2", "A3", "B1", "B2"]);
+    const cases: Array<[string, string[]]> = [
+      ["2", ["A2"]],
+      ["2-4", ["A2", "A3", "B1"]],
+      ["4-z", ["B1", "B2"]],
+      ["z", ["B2"]],
+      ["r1", ["B2"]],
+      ["r2-r1", ["B1", "B2"]],
+      ["r5-r1", ["A1", "A2", "A3", "B1", "B2"]],
+      ["4-2", ["B1", "A3", "A2"]],
+      ["5-3,1", ["B2", "B1", "A3", "A1"]],
+      ["3,1,2", ["A3", "A1", "A2"]],
+      ["1-2,z,r2", ["A1", "A2", "B2", "B1"]],
+    ];
+
+    for (const [range, expected] of cases) {
+      const output = join(directory, `range-${range.replaceAll(",", "_")}.pdf`);
+      await merge({ inputs: [{ path: input, pages: range }], output });
+
+      assert.equal(await pageCount({ input: output }), expected.length, range);
+      assert.deepEqual(markersIn(output, ALL_MARKERS), expected, range);
+    }
+  });
+
+  it("writes a page twice when a range names it twice", async () => {
+    const input = writePdf(directory, "twice.pdf", ["A1", "A2", "A3"]);
+    const output = join(directory, "twice-out.pdf");
+
+    await merge({ inputs: [{ path: input, pages: "2,2,1" }], output });
+
+    assert.equal(await pageCount({ input: output }), 3);
+  });
+
   it("resolves relative paths against the working directory", async () => {
     writePdf(directory, "rel-a.pdf", ["A1"]);
     writePdf(directory, "rel-b.pdf", ["B1"]);
@@ -117,6 +151,31 @@ describe("merge", () => {
       const error = await rejectionOf(merge(options as never));
       assert.equal(error.code, "INVALID_ARGUMENT", name);
       assert.match(error.message, message, name);
+    }
+    assert.equal(existsSync(output), false);
+  });
+
+  it("rejects page range syntax errors with INVALID_ARGUMENT", async () => {
+    const input = writePdf(directory, "syntax.pdf", ["A1", "A2"]);
+    const output = join(directory, "syntax-out.pdf");
+
+    for (const pages of [
+      "",
+      "1-",
+      "-2",
+      "a",
+      "1,,2",
+      "1,",
+      "r",
+      "r0",
+      "1--2",
+      "1 2",
+      "4294967296",
+    ]) {
+      const error = await rejectionOf(merge({ inputs: [{ path: input, pages }], output }));
+
+      assert.equal(error.code, "INVALID_ARGUMENT", JSON.stringify(pages));
+      assert.match(error.message, /inputs\[0\]\.pages is not a valid page range/, pages);
     }
     assert.equal(existsSync(output), false);
   });

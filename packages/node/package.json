@@ -1,54 +1,41 @@
 {
-  "name": "pdq-node",
-  "version": "0.1.0",
-  "description": "Node.js native addon for merging and splitting PDF files, built on the pdq Rust crate.",
+  "name": "qpdf-node",
+  "version": "0.2.0",
+  "description": "Node.js native addon (C++ N-API) for extracting, merging and splitting PDF pages, built on qpdf.",
   "keywords": [
     "pdf",
     "merge",
     "split",
-    "napi-rs",
-    "pdq"
+    "qpdf",
+    "n-api"
   ],
-  "license": "MIT AND Artistic-2.0",
+  "license": "MIT AND Apache-2.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
     "dist",
-    "native/index.js",
-    "native/index.d.ts",
-    "native/*.node",
+    "build/Release/qpdf_node.node",
     "LICENSE",
-    "LICENSE-ARTISTIC-2.0",
     "THIRD_PARTY_NOTICES.md",
     "README.md"
   ],
   "engines": {
     "node": ">=20"
   },
-  "napi": {
-    "binaryName": "pdq-node",
-    "targets": [
-      "aarch64-apple-darwin",
-      "x86_64-apple-darwin",
-      "x86_64-unknown-linux-gnu",
-      "aarch64-unknown-linux-gnu",
-      "x86_64-pc-windows-msvc"
-    ]
-  },
   "scripts": {
-    "build:native": "napi build --platform --release --manifest-path Cargo.toml --output-dir native --js index.js --dts index.d.ts",
-    "build:native:debug": "napi build --platform --manifest-path Cargo.toml --output-dir native --js index.js --dts index.d.ts",
+    "build:native": "cmake-js build --directory ../.. --out build --CDQPDF_NODE_BUILD_ADDON=ON --CDCMAKE_BUILD_TYPE=Release",
+    "build:native:debug": "cmake-js build --directory ../.. --out build --debug --CDQPDF_NODE_BUILD_ADDON=ON",
     "build:ts": "tsc -p tsconfig.build.json",
     "build": "pnpm run build:native && pnpm run build:ts",
-    "build:debug": "pnpm run build:native:debug && pnpm run build:ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test __tests__/*.test.ts",
     "check": "pnpm run typecheck",
     "prepack": "node scripts/copy-legal-files.mjs"
   },
   "devDependencies": {
-    "@napi-rs/cli": "^3.10.12",
     "@types/node": "^24.0.0",
+    "cmake-js": "^8.0.0",
+    "node-addon-api": "^8.5.0",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0"
   }

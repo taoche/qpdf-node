@@ -1,6 +1,5 @@
-target
+build
 node_modules
 dist
 pnpm-lock.yaml
-packages/node/native
 THIRD_PARTY_NOTICES.md

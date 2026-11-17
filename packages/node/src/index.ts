@@ -1,5 +1,5 @@
-export { PdqError } from "./errors";
-export type { PdqErrorCode } from "./errors";
+export { QpdfError } from "./errors";
+export type { QpdfErrorCode } from "./errors";
 export { merge, pageCount, splitPages } from "./operations";
 export type {
   MergeInputOptions,
@@ -9,3 +9,4 @@ export type {
 } from "./operations";
 export { openPdf } from "./open-pdf";
 export type { OpenedPdf } from "./open-pdf";
+export { qpdfVersion } from "./version";

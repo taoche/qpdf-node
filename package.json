@@ -1,12 +1,14 @@
 {
-  "name": "pdq-node-workspace",
+  "name": "qpdf-node-workspace",
   "private": true,
-  "description": "Workspace root for pdq-node. The published package lives in packages/node.",
+  "description": "Workspace root for qpdf-node. The published package lives in packages/node.",
   "scripts": {
-    "build": "pnpm --filter pdq-node run build",
-    "test": "cargo test --workspace && pnpm --filter pdq-node run test",
-    "check": "cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && prettier --check . && pnpm --filter pdq-node run check",
-    "format": "cargo fmt --all && prettier --write ."
+    "build": "pnpm --filter qpdf-node run build",
+    "test": "pnpm --filter qpdf-node run test",
+    "build:wasm": "emcmake cmake -S . -B build/wasm -DCMAKE_BUILD_TYPE=Release && cmake --build build/wasm --target qpdf_wasm",
+    "test:wasm": "node native/wasm/smoke-test.mjs build/wasm/qpdf-core.mjs",
+    "check": "prettier --check . && pnpm --filter qpdf-node run check",
+    "format": "prettier --write ."
   },
   "devDependencies": {
     "prettier": "^3.6.2"

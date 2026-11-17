@@ -3,7 +3,7 @@ import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
 
-import { pageCount, PdqError } from "../src/index";
+import { pageCount, QpdfError } from "../src/index";
 import { makeTempDirectory, writePdf } from "./helpers/pdf";
 
 const directory = makeTempDirectory();
@@ -18,13 +18,13 @@ describe("pageCount", () => {
 
   it("rejects options of the wrong shape with INVALID_ARGUMENT", async () => {
     await assert.rejects(pageCount("x.pdf" as never), (error: unknown) => {
-      assert.ok(error instanceof PdqError);
+      assert.ok(error instanceof QpdfError);
       assert.equal(error.code, "INVALID_ARGUMENT");
       assert.match(error.message, /pageCount options must be an object/);
       return true;
     });
     await assert.rejects(pageCount({ input: "" }), (error: unknown) => {
-      assert.ok(error instanceof PdqError);
+      assert.ok(error instanceof QpdfError);
       assert.equal(error.code, "INVALID_ARGUMENT");
       return true;
     });
@@ -35,7 +35,7 @@ describe("pageCount", () => {
     writeFileSync(input, "this is not a pdf");
 
     await assert.rejects(pageCount({ input }), (error: unknown) => {
-      assert.ok(error instanceof PdqError);
+      assert.ok(error instanceof QpdfError);
       assert.equal(error.code, "OPERATION_FAILED");
       assert.match(error.message, /not\.pdf/);
       return true;

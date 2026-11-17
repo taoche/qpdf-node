@@ -15,5 +15,5 @@
     "declaration": true,
     "noEmit": true
   },
-  "include": ["src", "native/index.d.ts", "__tests__"]
+  "include": ["src", "__tests__"]
 }

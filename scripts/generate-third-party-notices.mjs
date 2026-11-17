@@ -1,145 +1,102 @@
-// Regenerates THIRD_PARTY_NOTICES.md from `cargo metadata` and the license
-// files shipped inside each crate's source. Run from the repository root:
+// Regenerates THIRD_PARTY_NOTICES.md from the license files of the pinned
+// third-party sources. Run from the repository root after a native build has
+// fetched them (they live in the CMake build directory):
 //
+//   pnpm --filter qpdf-node run build:native
 //   node scripts/generate-third-party-notices.mjs
 //
-// It covers every crate the native addon is built from, on every platform (the
-// normal and build dependency graph of the `pdq-node-binding` crate), and
-// groups identical license texts so each text appears once.
+// The pinned versions are read from cmake/ThirdParty.cmake, so a version bump
+// there and a rerun of this script keep the notices in step.
 
-import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-const OWN_CRATES = new Set(["pdq-node-binding", "pdq-core"]);
-// The napi-rs crates (MIT) publish no license file. The napi-rs project's MIT
-// license text is taken from the @napi-rs/cli package, which comes from the
-// same repository (https://github.com/napi-rs/napi-rs).
-const NAPI_RS_LICENSE_PATH = "packages/node/node_modules/@napi-rs/cli/LICENSE";
-const LICENSE_FILE_PATTERN = /^(licen[sc]e|copying|unlicense|notice)/i;
+const buildDirectory = join("packages", "node", "build");
+const thirdPartyCmake = readFileSync(join("cmake", "ThirdParty.cmake"), "utf8");
 
-const metadata = JSON.parse(
-  execFileSync("cargo", ["metadata", "--format-version", "1", "--locked"], {
-    encoding: "utf8",
-    maxBuffer: 256 * 1024 * 1024,
-  }),
-);
-
-const packageById = new Map(metadata.packages.map((pkg) => [pkg.id, pkg]));
-const nodeById = new Map(metadata.resolve.nodes.map((node) => [node.id, node]));
-const root = metadata.packages.find((pkg) => pkg.name === "pdq-node-binding");
-
-const reachable = new Set();
-const pending = [root.id];
-while (pending.length > 0) {
-  const id = pending.pop();
-  if (reachable.has(id)) {
-    continue;
-  }
-  reachable.add(id);
-  for (const dependency of nodeById.get(id).deps) {
-    const isShipped = dependency.dep_kinds.some(
-      (kind) => kind.kind === null || kind.kind === "build",
-    );
-    if (isShipped) {
-      pending.push(dependency.pkg);
-    }
-  }
+function read(...segments) {
+  return readFileSync(join(...segments), "utf8").trimEnd();
 }
 
-const crates = [...reachable]
-  .map((id) => packageById.get(id))
-  .filter((pkg) => !OWN_CRATES.has(pkg.name))
-  .sort(
-    (left, right) =>
-      left.name.localeCompare(right.name) || left.version.localeCompare(right.version),
-  );
-
-function licenseFilesOf(pkg) {
-  const directory = pkg.manifest_path.replace(/[/\\]Cargo\.toml$/, "");
-  return readdirSync(directory, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && LICENSE_FILE_PATTERN.test(entry.name))
-    .map((entry) => ({
-      name: entry.name,
-      text: readFileSync(join(directory, entry.name), "utf8").replace(/\r\n/g, "\n").trim(),
-    }));
+/** Reads the commit and version from the `GIT_TAG <commit> # <version>` line after `declaration`. */
+function pinnedVersion(declaration) {
+  const afterDeclaration = thirdPartyCmake.split(declaration)[1];
+  const tag = afterDeclaration?.match(/GIT_TAG ([0-9a-f]{40}) # (\S+)/);
+  if (tag === null || tag === undefined) {
+    throw new Error(`cmake/ThirdParty.cmake has no pinned GIT_TAG after "${declaration}"`);
+  }
+  return { commit: tag[1], version: tag[2] };
 }
 
-const crateLines = [];
-const textGroups = new Map();
-const cratesWithoutLicenseFile = [];
-for (const pkg of crates) {
-  const label = `${pkg.name} ${pkg.version}`;
-  crateLines.push(
-    `| ${pkg.name} | ${pkg.version} | ${pkg.license ?? "(none declared)"} | ${pkg.repository ?? ""} |`,
-  );
-  const files = licenseFilesOf(pkg);
-  if (files.length === 0 && pkg.name.startsWith("napi")) {
-    files.push({
-      name: "LICENSE",
-      text: readFileSync(NAPI_RS_LICENSE_PATH, "utf8").replace(/\r\n/g, "\n").trim(),
-    });
-  }
-  if (files.length === 0) {
-    cratesWithoutLicenseFile.push(label);
-  }
-  for (const file of files) {
-    const hash = createHash("sha256").update(file.text).digest("hex");
-    if (!textGroups.has(hash)) {
-      textGroups.set(hash, { text: file.text, crates: [] });
-    }
-    textGroups.get(hash).crates.push(label);
-  }
-}
+const qpdf = pinnedVersion("FetchContent_Declare(qpdf");
+const zlib = pinnedVersion("FetchContent_Declare(zlib");
+const libjpegTurbo = pinnedVersion("ExternalProject_Add(libjpeg_turbo_ep");
 
-const pdq = crates.find((pkg) => pkg.name === "pdq");
 const sections = [];
+function fenced(text) {
+  return "```text\n" + text + "\n```";
+}
+
 sections.push(`# Third-party notices
 
-The \`pdq-node\` native addon statically links the Rust crates listed below.
+qpdf-node's own source (MIT, see \`LICENSE\`) links the third-party software below.
 This file is generated by \`scripts/generate-third-party-notices.mjs\`; do not edit it by hand.
 
-## pdq (Artistic License 2.0)
-
-The addon's PDF engine is the unmodified \`pdq\` crate, version ${pdq.version}
-(${pdq.repository}), which is distributed under the **Artistic License 2.0**.
-pdq's source is not copied into this repository: it is fetched from crates.io at
-build time, pinned to exactly this version, and compiled into the binary.
-
-The full license text is in \`LICENSE-ARTISTIC-2.0\`, distributed with this package.
-pdq's source code is available from the repository above and from
-https://crates.io/crates/pdq/${pdq.version}.
-
-## Rust crates linked into the addon
-
-${crates.length} crates, covering every platform target. Each crate is used under the license terms listed;
-where a crate offers several licenses ("OR"), the license texts below are those it ships.
-
-| Crate | Version | License | Repository |
+| Component | Version | License | Where it ends up |
 | --- | --- | --- | --- |
-${crateLines.join("\n")}
+| [qpdf](https://github.com/qpdf/qpdf) | ${qpdf.version} (${qpdf.commit}) | Apache-2.0 | statically linked into the Node addon and the WebAssembly module |
+| [zlib](https://github.com/madler/zlib) | ${zlib.version} (${zlib.commit}) | zlib License | statically linked into both |
+| [libjpeg-turbo](https://github.com/libjpeg-turbo/libjpeg-turbo) | ${libjpegTurbo.version} (${libjpegTurbo.commit}) | IJG License and BSD-3-Clause (zlib License for part of the code) | statically linked into both |
+| [node-addon-api](https://github.com/nodejs/node-addon-api) | ${JSON.parse(read("packages", "node", "node_modules", "node-addon-api", "package.json")).version} | MIT | header-only; compiled into the Node addon |
+| [Node-API headers](https://github.com/nodejs/node-api-headers) | via cmake-js | MIT | headers compiled into the Node addon |
+| [Emscripten](https://github.com/emscripten-core/emscripten) runtime, musl libc, LLVM libc++ | the toolchain used for the build | MIT / UIUC, MIT, Apache-2.0 with LLVM exceptions | linked into the WebAssembly module only |
 
-The napi-rs crates (\`napi*\`) publish no license file; the napi-rs MIT license text, taken from the
-\`@napi-rs/cli\` package of the same repository, is reproduced below for them.
-`);
+The sources are fetched by CMake at the pinned commits above; none is copied into this repository.
+qpdf has no runtime dependency on OpenSSL or GnuTLS here: the build uses qpdf's built-in crypto code
+(AES, RC4, MD5, SHA-2), covered by the qpdf notices below.
 
-if (cratesWithoutLicenseFile.length > 0) {
-  sections.push(`## Crates that ship no license file
+For the WebAssembly module, whoever distributes the built \`.mjs\`/\`.wasm\` must also ship the license
+texts of the Emscripten toolchain that produced it (Emscripten's \`LICENSE\` and the musl and LLVM
+libc++ licenses in the SDK), which are not reproduced here.
 
-These crates declare their license in \`Cargo.toml\` (see the table above) but include no license file in their published source: ${cratesWithoutLicenseFile.join(", ")}.
-`);
-}
+The package.json license field, \`MIT AND Apache-2.0\`, reflects this repository's MIT source plus
+the Apache-2.0 qpdf code in the compiled addon; the other components keep the permissive licenses
+quoted below.`);
 
-sections.push("## License texts\n");
-const groups = [...textGroups.values()].sort((left, right) =>
-  left.crates[0].localeCompare(right.crates[0]),
-);
-for (const group of groups) {
-  sections.push(`### Used by: ${group.crates.join(", ")}\n\n\`\`\`text\n${group.text}\n\`\`\`\n`);
-}
+sections.push(`## qpdf ${qpdf.version} (Apache-2.0)
 
-writeFileSync("THIRD_PARTY_NOTICES.md", `${sections.join("\n")}`);
-console.log(
-  `Wrote THIRD_PARTY_NOTICES.md: ${crates.length} crates, ${groups.length} distinct license texts, ${cratesWithoutLicenseFile.length} without a license file.`,
-);
+qpdf is distributed under the Apache License, version 2.0. Its source is available at
+https://github.com/qpdf/qpdf (commit ${qpdf.commit}).
+
+### qpdf NOTICE
+
+${read(buildDirectory, "_deps", "qpdf-src", "NOTICE.md")}
+
+### Apache License 2.0 (qpdf LICENSE.txt)
+
+${fenced(read(buildDirectory, "_deps", "qpdf-src", "LICENSE.txt"))}`);
+
+sections.push(`## zlib ${zlib.version}
+
+${fenced(read(buildDirectory, "_deps", "zlib-src", "LICENSE"))}
+
+The notice in zlib's README:
+
+${fenced(read(buildDirectory, "_deps", "zlib-src", "README").split("Copyright notice:")[1].trim())}`);
+
+const jpegSource = join(buildDirectory, "libjpeg-turbo", "src", "libjpeg_turbo_ep");
+sections.push(`## libjpeg-turbo ${libjpegTurbo.version}
+
+### LICENSE.md
+
+${read(jpegSource, "LICENSE.md")}
+
+### README.ijg
+
+${fenced(read(jpegSource, "README.ijg"))}`);
+
+sections.push(`## node-addon-api
+
+${fenced(read("packages", "node", "node_modules", "node-addon-api", "LICENSE.md"))}`);
+
+writeFileSync("THIRD_PARTY_NOTICES.md", sections.join("\n\n") + "\n");

@@ -1,17 +1,23 @@
 import { strict as assert } from "node:assert";
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 
 import { openPdf, pageCount } from "../src/index";
 import { rejectionOf } from "./helpers/assertions";
-import { makeTempDirectory, markersInBytes, pdfWithMarkers } from "./helpers/pdf";
+import {
+  makeTempDirectory,
+  markersInBytes,
+  pdfWithInheritedPageAttributes,
+  pdfWithLinkToLaterPage,
+  pdfWithMarkers,
+} from "./helpers/pdf";
 
 const ALL_MARKERS = ["A1", "A2", "A3", "A4", "A5"];
 
-// openPdf creates its private directories under os.tmpdir(), so point that at a
-// directory this file owns and the tests can see exactly what was left behind.
+// The handle is in-memory. Point the temporary directory at one this file owns
+// so the tests can prove that opening and extracting write nothing to it.
 const originalTemporaryDirectory = {
   TMPDIR: process.env.TMPDIR,
   TEMP: process.env.TEMP,
@@ -38,14 +44,6 @@ after(() => {
   rmSync(scratch, { recursive: true, force: true });
 });
 
-function openedDirectories(): string[] {
-  return readdirSync(temporaryRoot);
-}
-
-function filesIn(directoryName: string): string[] {
-  return readdirSync(join(temporaryRoot, directoryName));
-}
-
 function fivePagePdf(): Buffer {
   return pdfWithMarkers(ALL_MARKERS);
 }
@@ -56,11 +54,103 @@ async function pagesIn(bytes: Uint8Array): Promise<number> {
   return pageCount({ input: path });
 }
 
+/** `qpdf --check`, when a qpdf executable happens to be installed; the addon is the main oracle. */
+function checkWithQpdfExecutable(bytes: Uint8Array): void {
+  if (spawnSync("qpdf", ["--version"]).error !== undefined) {
+    return;
+  }
+  const path = join(scratch, `qpdf-check-${Math.random().toString(36).slice(2)}.pdf`);
+  writeFileSync(path, bytes);
+  const result = spawnSync("qpdf", ["--check", path], { encoding: "utf8" });
+  assert.equal(result.status, 0, `qpdf --check failed: ${result.stdout}${result.stderr}`);
+}
+
 describe("openPdf", () => {
-  it("opens a Buffer and reports its page count", async () => {
+  it("extracts pages [3, 1, 2] from bytes in caller order (the PR-shaped workflow)", async () => {
+    const input = pdfWithMarkers(["A1", "A2", "A3", "A4"]);
+    const pdf = await openPdf(input);
+    try {
+      assert.equal(pdf.pageCount, 4);
+
+      const output = await pdf.extract([3, 1, 2]);
+
+      assert.ok(output instanceof Uint8Array);
+      assert.equal(Buffer.from(output).subarray(0, 5).toString("latin1"), "%PDF-");
+      assert.ok(!Buffer.from(output).toString("latin1").includes("/Encrypt"));
+      assert.deepEqual(markersInBytes(output, ALL_MARKERS), ["A3", "A1", "A2"]);
+      assert.equal(await pagesIn(output), 3);
+      checkWithQpdfExecutable(output);
+
+      const reopened = await openPdf(output);
+      try {
+        assert.equal(reopened.pageCount, 3);
+        assert.deepEqual(markersInBytes(await reopened.extract([1]), ALL_MARKERS), ["A3"]);
+        assert.deepEqual(markersInBytes(await reopened.extract([3]), ALL_MARKERS), ["A2"]);
+      } finally {
+        await reopened.close();
+      }
+    } finally {
+      await pdf.close();
+    }
+  });
+
+  it("extracts a single page that stays complete", async () => {
     const pdf = await openPdf(fivePagePdf());
     try {
-      assert.equal(pdf.pageCount, 5);
+      const output = await pdf.extract([4]);
+      const text = Buffer.from(output).toString("latin1");
+
+      assert.deepEqual(markersInBytes(output, ALL_MARKERS), ["A4"]);
+      assert.equal(await pagesIn(output), 1);
+      // The page's own content, font, and size travel with it.
+      assert.match(text, /\/BaseFont \/Helvetica/);
+      assert.match(text, /\/MediaBox \[ ?0 0 200 200 ?\]/);
+      assert.match(text, /BT \/F1 12 Tf 20 100 Td \(A4\) Tj ET/);
+      checkWithQpdfExecutable(output);
+    } finally {
+      await pdf.close();
+    }
+  });
+
+  it("copies resources and sizes a page inherits from the page tree", async () => {
+    const pdf = await openPdf(pdfWithInheritedPageAttributes(["A1", "A2", "A3"]));
+    try {
+      const output = await pdf.extract([2]);
+      const text = Buffer.from(output).toString("latin1");
+
+      assert.deepEqual(markersInBytes(output, ALL_MARKERS), ["A2"]);
+      assert.match(text, /\/MediaBox/);
+      assert.match(text, /\[ ?0 0 300 400 ?\]/);
+      assert.match(text, /\/BaseFont \/Helvetica/);
+      assert.match(text, /\/F1 /);
+      checkWithQpdfExecutable(output);
+    } finally {
+      await pdf.close();
+    }
+  });
+
+  it("keeps a link annotation but does not pull in the page it points to", async () => {
+    const pdf = await openPdf(pdfWithLinkToLaterPage());
+    try {
+      const output = await pdf.extract([1]);
+      const text = Buffer.from(output).toString("latin1");
+
+      assert.equal(await pagesIn(output), 1);
+      assert.deepEqual(markersInBytes(output, ["L1", "L2", "L3"]), ["L1"]);
+      assert.match(text, /\/Subtype \/Link/);
+      checkWithQpdfExecutable(output);
+    } finally {
+      await pdf.close();
+    }
+  });
+
+  it("produces identical bytes for identical requests", async () => {
+    const pdf = await openPdf(fivePagePdf());
+    try {
+      const first = await pdf.extract([5, 2]);
+      const second = await pdf.extract([5, 2]);
+
+      assert.deepEqual(Buffer.from(first), Buffer.from(second));
     } finally {
       await pdf.close();
     }
@@ -84,21 +174,6 @@ describe("openPdf", () => {
     }
   });
 
-  it("extracts pages in the caller's order as an unencrypted PDF", async () => {
-    const pdf = await openPdf(fivePagePdf());
-    try {
-      const output = await pdf.extract([4, 1, 5]);
-
-      assert.ok(output instanceof Uint8Array);
-      assert.equal(Buffer.from(output).subarray(0, 5).toString("latin1"), "%PDF-");
-      assert.ok(!Buffer.from(output).toString("latin1").includes("/Encrypt"));
-      assert.deepEqual(markersInBytes(output, ALL_MARKERS), ["A4", "A1", "A5"]);
-      assert.equal(await pagesIn(output), 3);
-    } finally {
-      await pdf.close();
-    }
-  });
-
   it("supports many extracts, sequential and concurrent, from one opened PDF", async () => {
     const pdf = await openPdf(fivePagePdf());
     try {
@@ -108,13 +183,57 @@ describe("openPdf", () => {
         pdf.extract([2]),
         pdf.extract([3, 2]),
         pdf.extract([5]),
+        pdf.extract([4, 3, 2, 1]),
+        pdf.extract([1, 5]),
       ]);
 
       assert.deepEqual(markersInBytes(first, ALL_MARKERS), ["A1"]);
       assert.deepEqual(markersInBytes(second, ALL_MARKERS), ["A5", "A4"]);
-      assert.deepEqual(markersInBytes(concurrent[0], ALL_MARKERS), ["A2"]);
-      assert.deepEqual(markersInBytes(concurrent[1], ALL_MARKERS), ["A3", "A2"]);
-      assert.deepEqual(markersInBytes(concurrent[2], ALL_MARKERS), ["A5"]);
+      assert.deepEqual(markersInBytes(concurrent[0] as Uint8Array, ALL_MARKERS), ["A2"]);
+      assert.deepEqual(markersInBytes(concurrent[1] as Uint8Array, ALL_MARKERS), ["A3", "A2"]);
+      assert.deepEqual(markersInBytes(concurrent[2] as Uint8Array, ALL_MARKERS), ["A5"]);
+      assert.deepEqual(markersInBytes(concurrent[3] as Uint8Array, ALL_MARKERS), [
+        "A4",
+        "A3",
+        "A2",
+        "A1",
+      ]);
+      assert.deepEqual(markersInBytes(concurrent[4] as Uint8Array, ALL_MARKERS), ["A1", "A5"]);
+    } finally {
+      await pdf.close();
+    }
+  });
+
+  it("handles a larger document and many concurrent extracts", async () => {
+    const markers = Array.from({ length: 300 }, (_, index) => `P${index + 1}`);
+    const pdf = await openPdf(pdfWithMarkers(markers));
+    try {
+      assert.equal(pdf.pageCount, 300);
+      const outputs = await Promise.all(
+        Array.from({ length: 40 }, (_, index) => pdf.extract([300 - index, index + 1])),
+      );
+
+      outputs.forEach((output, index) => {
+        assert.deepEqual(markersInBytes(output, markers), [`P${300 - index}`, `P${index + 1}`]);
+      });
+    } finally {
+      await pdf.close();
+    }
+  });
+
+  it("extracts without blocking the event loop", async () => {
+    const markers = Array.from({ length: 2000 }, (_, index) => `P${index + 1}`);
+    const pdf = await openPdf(pdfWithMarkers(markers));
+    try {
+      const promise = pdf.extract(markers.map((_, index) => index + 1));
+      let immediateRanBeforeSettling = false;
+      setImmediate(() => {
+        immediateRanBeforeSettling = true;
+      });
+      const output = await promise;
+
+      assert.equal(immediateRanBeforeSettling, true);
+      assert.equal(await pagesIn(output), 2000);
     } finally {
       await pdf.close();
     }
@@ -122,8 +241,10 @@ describe("openPdf", () => {
 
   it("does not change the caller's input bytes or depend on them after opening", async () => {
     const input = fivePagePdf();
+    const snapshot = Buffer.from(input);
     const pdf = await openPdf(input);
     try {
+      assert.deepEqual(input, snapshot);
       input.fill(0);
 
       const output = await pdf.extract([3]);
@@ -132,6 +253,19 @@ describe("openPdf", () => {
     } finally {
       await pdf.close();
     }
+  });
+
+  it("writes nothing to the temporary directory", async () => {
+    const pdf = await openPdf(fivePagePdf());
+    try {
+      await pdf.extract([1, 2]);
+      await Promise.all([pdf.extract([3]), pdf.extract([4])]);
+
+      assert.deepEqual(readdirSync(temporaryRoot), []);
+    } finally {
+      await pdf.close();
+    }
+    assert.deepEqual(readdirSync(temporaryRoot), []);
   });
 
   it("rejects input that is not a non-empty Uint8Array with INVALID_ARGUMENT", async () => {
@@ -150,22 +284,41 @@ describe("openPdf", () => {
       assert.equal(error.code, "INVALID_ARGUMENT", name);
       assert.match(error.message, message, name);
     }
-    assert.deepEqual(openedDirectories(), []);
   });
 
-  it("rejects bytes that are not a PDF with OPERATION_FAILED and leaves no files", async () => {
+  it("rejects bytes that are not a PDF with OPERATION_FAILED", async () => {
     const error = await rejectionOf(openPdf(Buffer.from("this is not a pdf")));
 
     assert.equal(error.code, "OPERATION_FAILED");
     assert.match(error.message, /openPdf could not read the input bytes\. byteLength=17/);
-    assert.deepEqual(openedDirectories(), []);
   });
 
-  it("rejects invalid pages with INVALID_ARGUMENT before writing any output", async () => {
+  it("repairs a PDF whose cross-reference offset is wrong", async () => {
+    const damaged = Buffer.from(
+      fivePagePdf()
+        .toString("latin1")
+        .replace(/startxref\n\d+/, "startxref\n999999"),
+      "latin1",
+    );
+
+    const pdf = await openPdf(damaged);
+    try {
+      assert.equal(pdf.pageCount, 5);
+      assert.deepEqual(markersInBytes(await pdf.extract([2, 4]), ALL_MARKERS), ["A2", "A4"]);
+    } finally {
+      await pdf.close();
+    }
+  });
+
+  it("rejects a truncated PDF that cannot be repaired with OPERATION_FAILED", async () => {
+    const error = await rejectionOf(openPdf(fivePagePdf().subarray(0, 60)));
+
+    assert.equal(error.code, "OPERATION_FAILED");
+  });
+
+  it("rejects invalid pages with INVALID_ARGUMENT", async () => {
     const pdf = await openPdf(fivePagePdf());
     try {
-      const [directoryName] = openedDirectories();
-      assert.ok(directoryName);
       const cases: Array<[string, unknown, RegExp]> = [
         ["not an array", 1, /extract pages must be an array/],
         ["empty", [], /extract pages must not be empty/],
@@ -184,45 +337,27 @@ describe("openPdf", () => {
         assert.equal(error.code, "INVALID_ARGUMENT", name);
         assert.match(error.message, message, name);
       }
-      assert.deepEqual(filesIn(directoryName), ["input.pdf"]);
+      // The handle is still usable after rejected requests.
+      assert.deepEqual(markersInBytes(await pdf.extract([5]), ALL_MARKERS), ["A5"]);
     } finally {
       await pdf.close();
     }
-  });
-
-  it("leaves only the input file in its directory between extracts", async () => {
-    const pdf = await openPdf(fivePagePdf());
-    try {
-      const [directoryName] = openedDirectories();
-      assert.ok(directoryName);
-      assert.deepEqual(filesIn(directoryName), ["input.pdf"]);
-
-      await pdf.extract([1, 2]);
-      await Promise.all([pdf.extract([3]), pdf.extract([4])]);
-
-      assert.deepEqual(filesIn(directoryName), ["input.pdf"]);
-    } finally {
-      await pdf.close();
-    }
-    assert.deepEqual(openedDirectories(), []);
   });
 
   it("close is idempotent and extract after close rejects", async () => {
     const pdf = await openPdf(fivePagePdf());
-    assert.equal(openedDirectories().length, 1);
 
     await pdf.close();
     await pdf.close();
     await Promise.all([pdf.close(), pdf.close()]);
 
-    assert.deepEqual(openedDirectories(), []);
     const error = await rejectionOf(pdf.extract([1]));
     assert.equal(error.code, "INVALID_ARGUMENT");
     assert.match(error.message, /closed/);
     assert.equal(pdf.pageCount, 5);
   });
 
-  it("close waits for extractions already in progress", async () => {
+  it("close waits for extractions already in progress, which still complete", async () => {
     const pdf = await openPdf(fivePagePdf());
 
     const extraction = pdf.extract([5, 4, 3]);
@@ -230,16 +365,13 @@ describe("openPdf", () => {
     const output = await extraction;
 
     assert.deepEqual(markersInBytes(output, ALL_MARKERS), ["A5", "A4", "A3"]);
-    assert.deepEqual(openedDirectories(), []);
   });
 
   it("keeps separate opened PDFs independent", async () => {
     const first = await openPdf(pdfWithMarkers(["A1", "A2"]));
     const second = await openPdf(pdfWithMarkers(["A1", "A2", "A3"]));
     try {
-      assert.equal(openedDirectories().length, 2);
       await first.close();
-      assert.equal(openedDirectories().length, 1);
 
       const output = await second.extract([3, 1]);
 
@@ -247,21 +379,6 @@ describe("openPdf", () => {
     } finally {
       await first.close();
       await second.close();
-    }
-  });
-
-  it("creates its directory under the system temporary directory", async () => {
-    const pdf = await openPdf(fivePagePdf());
-    try {
-      assert.equal(tmpdir(), temporaryRoot);
-      const [directoryName] = openedDirectories();
-      assert.match(directoryName ?? "", /^pdq-node-/);
-      assert.equal(
-        readFileSync(join(temporaryRoot, directoryName ?? "", "input.pdf")).length,
-        fivePagePdf().length,
-      );
-    } finally {
-      await pdf.close();
     }
   });
 });

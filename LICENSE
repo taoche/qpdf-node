@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 pdq-node contributors
+Copyright (c) 2026 qpdf-node contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -22,8 +22,9 @@ SOFTWARE.
 
 ---
 
-This license covers only the source code in this repository (the Rust binding
-and TypeScript wrapper). The compiled native addon built from it statically
-links the `pdq` crate (Artistic License 2.0, see LICENSE-ARTISTIC-2.0) and other
-third-party crates (see THIRD_PARTY_NOTICES.md). The distributed package is
-therefore licensed "MIT AND Artistic-2.0" as a whole, not MIT alone.
+This license covers only the source code in this repository (the C++ core, the
+Node.js and WebAssembly bindings, and the TypeScript wrapper). The compiled
+addon and WebAssembly module statically link qpdf (Apache License 2.0), zlib,
+and libjpeg-turbo; their licenses and notices are in THIRD_PARTY_NOTICES.md.
+The distributed package is therefore licensed "MIT AND Apache-2.0" as a whole,
+not MIT alone.
