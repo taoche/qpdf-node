@@ -1,5 +1,6 @@
-# Builds the native addon on every supported platform, smoke-tests the packaged
-# result, and publishes the platform packages followed by the root package.
+# Builds the native addon on every supported platform, bundles all five addons
+# into ONE npm package (qpdf-node), smoke-tests that package's tarball on every
+# platform, and publishes it.
 #
 #   - Push a tag `vX.Y.Z` that matches packages/node/package.json: build, test, publish.
 #   - Run manually (workflow_dispatch): the same builds and tests, then `npm publish --dry-run`.
@@ -23,7 +24,7 @@ concurrency:
 
 jobs:
   prepare:
-    name: Check and stage the root package
+    name: Check the repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -41,13 +42,6 @@ jobs:
       - name: Verify version consistency (manual run)
         if: github.event_name != 'push'
         run: node scripts/verify-release.mjs
-      - run: pnpm --filter qpdf-node run build:ts
-      - run: node scripts/package-root.mjs
-      - uses: actions/upload-artifact@v4
-        with:
-          name: qpdf-node
-          path: build/npm/qpdf-node
-          if-no-files-found: error
 
   build-native:
     name: Build ${{ matrix.target }}
@@ -101,17 +95,45 @@ jobs:
             macOS) otool -L "$addon" ;;
             Windows) echo "(no dumpbin check on Windows)" ;;
           esac
-      - name: Stage the platform package
-        run: node scripts/package-platform.mjs --target "${{ matrix.target }}"
+      - name: Name the addon for this platform
+        run: node scripts/stage-addon.mjs --target "${{ matrix.target }}" --out build/addons
       - uses: actions/upload-artifact@v4
         with:
-          name: qpdf-node-${{ matrix.target }}
-          path: build/npm/qpdf-node-${{ matrix.target }}
+          name: addon-${{ matrix.target }}
+          path: build/addons/qpdf_node.${{ matrix.target }}.node
+          if-no-files-found: error
+
+  package:
+    name: Stage the qpdf-node package
+    needs: [prepare, build-native]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter qpdf-node run build:ts
+      # One artifact per platform, merged into one directory.
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: addon-*
+          path: build/addons
+          merge-multiple: true
+      - name: Stage one package holding all five addons
+        run: node scripts/package-root.mjs --addons build/addons --out build/npm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qpdf-node
+          path: build/npm/qpdf-node
           if-no-files-found: error
 
   test-artifacts:
     name: Test packaged ${{ matrix.target }}
-    needs: [prepare, build-native]
+    needs: package
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     strategy:
@@ -138,19 +160,12 @@ jobs:
         with:
           name: qpdf-node
           path: build/npm/qpdf-node
-      - uses: actions/download-artifact@v4
-        with:
-          name: qpdf-node-${{ matrix.target }}
-          path: build/npm/qpdf-node-${{ matrix.target }}
-      - name: Install the packaged root and platform packages and run a PDF operation
-        run: >
-          node scripts/smoke-test-packages.mjs
-          --root build/npm/qpdf-node
-          --platform build/npm/qpdf-node-${{ matrix.target }}
+      - name: Pack the staged package, install the tarball, and run a PDF operation
+        run: node scripts/smoke-test-package.mjs --package build/npm/qpdf-node
 
   publish:
     name: Publish (dry run unless this is a tag push)
-    needs: [prepare, build-native, test-artifacts]
+    needs: [package, test-artifacts]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -165,17 +180,17 @@ jobs:
           registry-url: https://registry.npmjs.org
       - uses: actions/download-artifact@v4
         with:
-          pattern: qpdf-node*
-          path: build/npm
+          name: qpdf-node
+          path: build/npm/qpdf-node
       - name: Publish dry run (manual run)
         if: github.event_name != 'push'
-        run: node scripts/publish-packages.mjs --dir build/npm --dry-run
-      - name: Publish platform packages, then qpdf-node (tag push)
+        run: node scripts/publish-package.mjs --dir build/npm --dry-run
+      - name: Publish qpdf-node (tag push)
         if: github.event_name == 'push'
         env:
           # Empty when the repository uses npm trusted publishing instead of a token.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: node scripts/publish-packages.mjs --dir build/npm
+        run: node scripts/publish-package.mjs --dir build/npm
 
   # WebAssembly is built and smoke-tested under Node.js, then offered as a
   # workflow artifact only. It is not published, no npm package depends on it, and

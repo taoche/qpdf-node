@@ -4,7 +4,8 @@
 //
 // Checks that the workspace manifest, CMakeLists.txt and (when given) the git
 // tag agree on one version, and that the manifest is the one the release scripts
-// expect (name, private, no binary files, no hand-written platform dependencies).
+// expect (name, private, no dependencies on platform packages: the release is one
+// package, qpdf-node, that bundles every platform's addon).
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -23,14 +24,18 @@ if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(manifest.version)) {
   problems.push(`version is not a plain semver version. version=${manifest.version}`);
 }
 if (manifest.private !== true) {
-  problems.push(
-    "packages/node/package.json must stay private: publish the staged packages instead",
-  );
+  problems.push("packages/node/package.json must stay private: publish the staged package instead");
 }
-if (manifest.optionalDependencies !== undefined) {
+for (const field of ["dependencies", "optionalDependencies"]) {
+  if (manifest[field] !== undefined) {
+    problems.push(
+      `packages/node/package.json must not list ${field}: qpdf-node is a single package that bundles every addon`,
+    );
+  }
+}
+if (manifest.repository?.url !== "git+https://github.com/taoche/qpdf-node.git") {
   problems.push(
-    "packages/node/package.json must not list optionalDependencies: they are added to the staged " +
-      "package by scripts/package-root.mjs (the platform packages are not on the registry before a release)",
+    `packages/node/package.json repository.url must be git+https://github.com/taoche/qpdf-node.git. found=${manifest.repository?.url}`,
   );
 }
 
@@ -66,5 +71,5 @@ if (problems.length > 0) {
   process.exit(1);
 }
 console.log(
-  `Release check passed. version=${manifest.version}, packages=${[...platforms.map((p) => p.name), "qpdf-node"].join(",")}`,
+  `Release check passed. version=${manifest.version}, package=qpdf-node, addons=${platforms.map((p) => p.addonFileName).join(",")}`,
 );

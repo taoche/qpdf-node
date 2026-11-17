@@ -1,29 +1,22 @@
-// Publishes the staged packages: every platform package first, the root
-// package last, so a user can never install a root package whose optional
-// dependencies are not yet on the registry.
+// Publishes the staged qpdf-node package.
 //
-//   node scripts/publish-packages.mjs --dir build/npm [--dry-run]
+//   node scripts/publish-package.mjs --dir build/npm [--dry-run]
 //
-// Re-runnable: a package@version that is already on the registry is skipped.
+// Re-runnable: a version that is already on the registry is skipped.
 // Authentication comes from the environment (NODE_AUTH_TOKEN written by
 // actions/setup-node, or npm trusted publishing); this script never reads or
 // prints credentials. A version with a prerelease suffix is published under the
 // "next" dist-tag instead of "latest".
-
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-
-import { platforms } from "./release-lib.mjs";
 
 const { values } = parseArgs({
   options: { dir: { type: "string" }, "dry-run": { type: "boolean", default: false } },
 });
 const stagingDirectory = resolve(values.dir ?? join("build", "npm"));
 const dryRun = values["dry-run"];
-
-const packageNames = [...platforms.map((platform) => platform.name), "qpdf-node"];
 
 function npm(args, options = {}) {
   return spawnSync("npm", args, {
@@ -47,36 +40,24 @@ function isPublished(name, version) {
   );
 }
 
-const manifests = packageNames.map((name) => {
-  const directory = join(stagingDirectory, name);
-  const manifestPath = join(directory, "package.json");
-  if (!existsSync(manifestPath)) {
-    throw new Error(`Staged package is missing. package=${name}, expected=${manifestPath}`);
-  }
-  return { name, directory, manifest: JSON.parse(readFileSync(manifestPath, "utf8")) };
-});
-
-const versions = new Set(manifests.map(({ manifest }) => manifest.version));
-if (versions.size !== 1) {
-  throw new Error(`Staged packages disagree on the version. versions=${[...versions].join(",")}`);
+const directory = join(stagingDirectory, "qpdf-node");
+const manifestPath = join(directory, "package.json");
+if (!existsSync(manifestPath)) {
+  throw new Error(`Staged package is missing. package=qpdf-node, expected=${manifestPath}`);
 }
-const [version] = versions;
+const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+if (manifest.name !== "qpdf-node") {
+  throw new Error(`The staged package has an unexpected name. name=${manifest.name}`);
+}
+if (manifest.optionalDependencies !== undefined || manifest.dependencies !== undefined) {
+  throw new Error("The staged package must not have dependencies: it bundles every addon.");
+}
+const { name, version } = manifest;
 const distributionTag = version.includes("-") ? "next" : "latest";
 
-const rootManifest = manifests.at(-1).manifest;
-for (const platform of platforms) {
-  if (rootManifest.optionalDependencies?.[platform.name] !== version) {
-    throw new Error(
-      `The root package does not depend on ${platform.name}@${version}. found=${rootManifest.optionalDependencies?.[platform.name]}`,
-    );
-  }
-}
-
-for (const { name, directory } of manifests) {
-  if (!dryRun && isPublished(name, version)) {
-    console.log(`Skipping ${name}@${version}: already published.`);
-    continue;
-  }
+if (!dryRun && isPublished(name, version)) {
+  console.log(`Skipping ${name}@${version}: already published.`);
+} else {
   const args = ["publish", directory, "--access", "public", "--tag", distributionTag];
   if (dryRun) {
     args.push("--dry-run");

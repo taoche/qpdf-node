@@ -4,10 +4,10 @@ import { describe, test } from "node:test";
 import { pathToFileURL } from "node:url";
 
 import {
+  bundledAddonFileName,
   detectRuntimePlatform,
   loadNativeBinding,
-  platformPackageName,
-  supportedPlatformPackages,
+  supportedAddonFileNames,
 } from "../src/native-loader";
 import type { NativeLoaderEnvironment, RuntimePlatform } from "../src/native-loader";
 import type { NativeBinding } from "../src/native-binding";
@@ -48,13 +48,13 @@ function environment(overrides: {
   };
 }
 
-describe("platformPackageName", () => {
+describe("bundledAddonFileName", () => {
   const cases: Array<[RuntimePlatform, string | undefined]> = [
-    [{ platform: "darwin", arch: "arm64", libc: undefined }, "qpdf-node-darwin-arm64"],
-    [{ platform: "darwin", arch: "x64", libc: undefined }, "qpdf-node-darwin-x64"],
-    [{ platform: "linux", arch: "x64", libc: "glibc" }, "qpdf-node-linux-x64-gnu"],
-    [{ platform: "linux", arch: "arm64", libc: "glibc" }, "qpdf-node-linux-arm64-gnu"],
-    [{ platform: "win32", arch: "x64", libc: undefined }, "qpdf-node-win32-x64-msvc"],
+    [{ platform: "darwin", arch: "arm64", libc: undefined }, "qpdf_node.darwin-arm64.node"],
+    [{ platform: "darwin", arch: "x64", libc: undefined }, "qpdf_node.darwin-x64.node"],
+    [{ platform: "linux", arch: "x64", libc: "glibc" }, "qpdf_node.linux-x64-gnu.node"],
+    [{ platform: "linux", arch: "arm64", libc: "glibc" }, "qpdf_node.linux-arm64-gnu.node"],
+    [{ platform: "win32", arch: "x64", libc: undefined }, "qpdf_node.win32-x64-msvc.node"],
     [{ platform: "linux", arch: "x64", libc: "musl" }, undefined],
     [{ platform: "linux", arch: "x64", libc: undefined }, undefined],
     [{ platform: "linux", arch: "ia32", libc: "glibc" }, undefined],
@@ -63,29 +63,33 @@ describe("platformPackageName", () => {
   ];
   for (const [runtime, expected] of cases) {
     test(`${runtime.platform} ${runtime.arch} ${runtime.libc ?? "-"}`, () => {
-      assert.equal(platformPackageName(runtime), expected);
+      assert.equal(bundledAddonFileName(runtime), expected);
     });
   }
 
-  test("supported packages match the release script's platform table", async () => {
+  test("supported addons match the release script's platform table", async () => {
     const releaseLibUrl = pathToFileURL(
       join(__dirname, "..", "..", "..", "scripts", "release-lib.mjs"),
     );
     const { platforms } = (await import(releaseLibUrl.href)) as {
-      platforms: Array<{ name: string }>;
+      platforms: Array<{ addonFileName: string }>;
     };
-    assert.deepEqual([...supportedPlatformPackages].sort(), platforms.map((p) => p.name).sort());
+    assert.deepEqual(
+      [...supportedAddonFileNames].sort(),
+      platforms.map((p) => p.addonFileName).sort(),
+    );
   });
 });
 
 describe("loadNativeBinding", () => {
   const darwin: RuntimePlatform = { platform: "darwin", arch: "arm64", libc: undefined };
+  const darwinAddon = join("/package", "native", "qpdf_node.darwin-arm64.node");
 
-  test("prefers the development build over a platform package", () => {
+  test("prefers the development build over the bundled addon", () => {
     const env = environment({
       runtime: darwin,
-      existingFiles: [developmentAddon],
-      modules: { [developmentAddon]: fakeBinding, "qpdf-node-darwin-arm64": {} },
+      existingFiles: [developmentAddon, darwinAddon],
+      modules: { [developmentAddon]: fakeBinding, [darwinAddon]: {} },
     });
     assert.equal(loadNativeBinding(env), fakeBinding);
     assert.deepEqual(env.requested, [developmentAddon]);
@@ -95,43 +99,60 @@ describe("loadNativeBinding", () => {
     const failure = Object.assign(new Error("dlopen failed"), { code: "ERR_DLOPEN_FAILED" });
     const env = environment({
       runtime: darwin,
-      existingFiles: [developmentAddon],
-      modules: { [developmentAddon]: failure, "qpdf-node-darwin-arm64": fakeBinding },
+      existingFiles: [developmentAddon, darwinAddon],
+      modules: { [developmentAddon]: failure, [darwinAddon]: fakeBinding },
     });
     assert.throws(() => loadNativeBinding(env), /dlopen failed/);
   });
 
-  test("falls back to the platform package", () => {
+  test("falls back to the bundled addon for this platform", () => {
     const env = environment({
       runtime: darwin,
-      modules: { "qpdf-node-darwin-arm64": fakeBinding },
+      existingFiles: [darwinAddon],
+      modules: { [darwinAddon]: fakeBinding },
     });
     assert.equal(loadNativeBinding(env), fakeBinding);
-    assert.deepEqual(env.requested, ["qpdf-node-darwin-arm64"]);
+    assert.deepEqual(env.requested, [darwinAddon]);
   });
 
-  test("names the missing platform package and how to fix it", () => {
+  test("selects the bundled addon by platform, architecture and libc", () => {
+    const linuxAddon = join("/package", "native", "qpdf_node.linux-arm64-gnu.node");
+    const env = environment({
+      runtime: { platform: "linux", arch: "arm64", libc: "glibc" },
+      existingFiles: [darwinAddon, linuxAddon],
+      modules: { [darwinAddon]: {}, [linuxAddon]: fakeBinding },
+    });
+    assert.equal(loadNativeBinding(env), fakeBinding);
+    assert.deepEqual(env.requested, [linuxAddon]);
+  });
+
+  test("names the missing bundled addon and how to fix it", () => {
     const env = environment({ runtime: darwin });
     assert.throws(
       () => loadNativeBinding(env),
       (error: Error) => {
-        assert.match(error.message, /qpdf-node-darwin-arm64/);
-        assert.match(error.message, /--omit=optional/);
-        assert.equal((error.cause as NodeJS.ErrnoException).code, "MODULE_NOT_FOUND");
+        assert.match(error.message, /bundled native addon qpdf_node\.darwin-arm64\.node/);
+        assert.match(error.message, /reinstall qpdf-node/);
+        assert.match(error.message, /build:native/);
         return true;
       },
     );
+    assert.deepEqual(env.requested, []);
   });
 
-  test("reports a platform package that exists but fails to load", () => {
+  test("reports a bundled addon that exists but fails to load", () => {
     const failure = Object.assign(new Error("dlopen: libstdc++ too old"), {
       code: "ERR_DLOPEN_FAILED",
     });
-    const env = environment({ runtime: darwin, modules: { "qpdf-node-darwin-arm64": failure } });
+    const env = environment({
+      runtime: darwin,
+      existingFiles: [darwinAddon],
+      modules: { [darwinAddon]: failure },
+    });
     assert.throws(
       () => loadNativeBinding(env),
       (error: Error) => {
-        assert.match(error.message, /found its native addon package qpdf-node-darwin-arm64/);
+        assert.match(error.message, /found its bundled native addon qpdf_node\.darwin-arm64\.node/);
         assert.match(error.message, /libstdc\+\+ too old/);
         assert.equal(error.cause, failure);
         return true;
@@ -139,22 +160,14 @@ describe("loadNativeBinding", () => {
     );
   });
 
-  test("a dependency missing from inside the platform package is not 'package not found'", () => {
-    const env = environment({
-      runtime: darwin,
-      modules: { "qpdf-node-darwin-arm64": moduleNotFound("some-other-lib") },
-    });
-    assert.throws(() => loadNativeBinding(env), /found its native addon package/);
-  });
-
-  test("unsupported platform lists what is supported", () => {
+  test("unsupported platform lists what is bundled", () => {
     const env = environment({ runtime: { platform: "linux", arch: "x64", libc: "musl" } });
     assert.throws(
       () => loadNativeBinding(env),
       (error: Error) => {
         assert.match(error.message, /no prebuilt native addon/);
         assert.match(error.message, /platform=linux, arch=x64, libc=musl/);
-        assert.match(error.message, /qpdf-node-linux-x64-gnu/);
+        assert.match(error.message, /qpdf_node\.linux-x64-gnu\.node/);
         return true;
       },
     );

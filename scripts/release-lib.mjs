@@ -1,5 +1,6 @@
 // Shared helpers for the release scripts: the supported platform table, the
-// source manifest, and the reading of the repository's version.
+// source manifest, and the reading of the repository's version. The release is
+// one npm package, qpdf-node, that bundles one addon per supported platform.
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -9,12 +10,20 @@ export const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), ".."
 export const packageDirectory = join(repositoryRoot, "packages", "node");
 
 /**
- * Every prebuilt target. `name` is the npm package that holds the addon for it
- * and must equal what packages/node/src/native-loader.ts computes at run time
- * (a test checks this). `runner` is the GitHub Actions runner that builds it.
+ * Every prebuilt target. `addonFileName` is the file the qpdf-node package
+ * bundles in its `native/` directory for it and must equal what
+ * packages/node/src/native-loader.ts looks for at run time (a test checks this).
+ * `runner` is the GitHub Actions runner that builds it.
  */
+export function addonFileNameFor(target) {
+  return `qpdf_node.${target}.node`;
+}
+
+/** The directory inside the published package that holds the bundled addons. */
+export const bundledAddonDirectoryName = "native";
+
 function definePlatform(target, os, cpu, libc, runner) {
-  return { target, name: `qpdf-node-${target}`, os, cpu, libc, runner };
+  return { target, addonFileName: addonFileNameFor(target), os, cpu, libc, runner };
 }
 
 export const platforms = [
@@ -53,10 +62,9 @@ export function readSourceManifest() {
 }
 
 /**
- * The repository URL to record in published manifests. The source manifest
- * does not carry one (the GitHub remote did not exist when it was written), so
- * CI supplies it: QPDF_NODE_REPOSITORY_URL wins, then GITHUB_REPOSITORY. Returns
- * undefined when neither is set (local packing).
+ * An override for the repository URL recorded in the published manifest:
+ * QPDF_NODE_REPOSITORY_URL wins, then GITHUB_REPOSITORY. Returns undefined when
+ * neither is set, in which case the source manifest's `repository` is used.
  */
 export function repositoryField(environment = process.env) {
   const explicit = environment.QPDF_NODE_REPOSITORY_URL;
