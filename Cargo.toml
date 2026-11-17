@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = ["crates/pdq-core", "packages/node"]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.92"
+
+[workspace.dependencies]
+# Pinned exactly: the binding's behavior is the behavior of this pdq release.
+# default-features = false drops the render and text features (and hayro), which
+# this package does not expose.
+pdq = { version = "=0.5.1", default-features = false }

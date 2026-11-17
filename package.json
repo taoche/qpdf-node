@@ -1,0 +1,15 @@
+{
+  "name": "pdq-node-workspace",
+  "private": true,
+  "description": "Workspace root for pdq-node. The published package lives in packages/node.",
+  "scripts": {
+    "build": "pnpm --filter pdq-node run build",
+    "test": "cargo test --workspace && pnpm --filter pdq-node run test",
+    "check": "cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && prettier --check . && pnpm --filter pdq-node run check",
+    "format": "cargo fmt --all && prettier --write ."
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2"
+  },
+  "packageManager": "pnpm@10.32.1"
+}

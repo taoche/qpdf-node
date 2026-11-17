@@ -1,0 +1,4 @@
+[toolchain]
+# pdq 0.5.1 declares rust-version = "1.92".
+channel = "1.92"
+components = ["clippy", "rustfmt"]

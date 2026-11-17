@@ -1,0 +1,12 @@
+target/
+node_modules/
+dist/
+*.node
+*.tsbuildinfo
+.DS_Store
+
+# Copied from the repository root by `prepack`.
+packages/node/LICENSE
+packages/node/LICENSE-ARTISTIC-2.0
+packages/node/THIRD_PARTY_NOTICES.md
+packages/node/README.md

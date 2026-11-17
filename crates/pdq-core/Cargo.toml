@@ -1,0 +1,15 @@
+[package]
+name = "pdq-core"
+version = "0.1.0"
+description = "Validated, path-based PDF merge and split operations on top of the pdq crate. No Node.js dependency."
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT"
+publish = false
+
+[dependencies]
+pdq.workspace = true
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"
