@@ -200,6 +200,41 @@ Bytes assemblePages(const std::vector<PageSelection>& selections) {
   return result;
 }
 
+Bytes mergeMemory(std::vector<MemoryMergeInput> inputs) {
+  if (inputs.empty()) {
+    throw Error(ErrorKind::InvalidArgument, "merge requires at least one input. inputs=[]");
+  }
+  std::vector<PageSelection> selections;
+  for (std::size_t index = 0; index < inputs.size(); ++index) {
+    const std::string label = "mergeBytes inputs[" + std::to_string(index) + "]";
+    std::shared_ptr<Document> document;
+    try {
+      document = Document::openMemory(std::move(inputs[index].bytes), "");
+    } catch (const Error& cause) {
+      throw Error(cause.kind(), label + " could not be read: " + cause.what());
+    }
+    std::vector<std::uint32_t> pages;
+    if (inputs[index].pages) {
+      try {
+        pages = inputs[index].pages->resolve(document->pageCount());
+      } catch (const Error& cause) {
+        throw Error(cause.kind(), label + ".pages cannot be applied: " + cause.what());
+      }
+    } else {
+      for (std::uint32_t page = 1; page <= document->pageCount(); ++page) {
+        pages.push_back(page);
+      }
+    }
+    if (!pages.empty()) {
+      selections.push_back(PageSelection{document, pages});
+    }
+  }
+  if (selections.empty()) {
+    throw Error(ErrorKind::OperationFailed, "merge has no pages to write");
+  }
+  return assemblePages(selections);
+}
+
 std::string qpdfVersion() { return QPDF::QPDFVersion(); }
 
 namespace internal {

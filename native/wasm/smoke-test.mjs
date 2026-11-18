@@ -75,6 +75,31 @@ for (const pages of [[], [0], [5], [1, 1], [1.5], "1"]) {
 const notPdf = errorFrom(() => core.openPdf(new Uint8Array(Buffer.from("not a pdf"))));
 assert.equal(notPdf.code, "OPERATION_FAILED");
 
+const first = pdfWithMarkers(["A1", "A2", "A3"]);
+const second = pdfWithMarkers(["B1", "B2"]);
+const merged = core.mergeBytes([first, { bytes: second, pages: "2,1" }]);
+assert.ok(merged instanceof Uint8Array);
+assert.deepEqual(markersIn(merged, ["A1", "A2", "A3", "B1", "B2"]), ["A1", "A2", "A3", "B2", "B1"]);
+const mergedDocument = core.openPdf(merged);
+assert.equal(mergedDocument.pageCount, 5);
+mergedDocument.close();
+assert.equal(errorFrom(() => core.mergeBytes([])).code, "INVALID_ARGUMENT");
+assert.equal(errorFrom(() => core.mergeBytes("x")).code, "INVALID_ARGUMENT");
+assert.equal(errorFrom(() => core.mergeBytes([first, "x"])).code, "INVALID_ARGUMENT");
+assert.equal(errorFrom(() => core.mergeBytes([new Uint8Array(0)])).code, "INVALID_ARGUMENT");
+assert.equal(
+  errorFrom(() => core.mergeBytes([{ bytes: first, pages: "2-" }])).code,
+  "INVALID_ARGUMENT",
+);
+assert.equal(
+  errorFrom(() => core.mergeBytes([{ bytes: first, pages: "9" }])).code,
+  "OPERATION_FAILED",
+);
+assert.equal(
+  errorFrom(() => core.mergeBytes([first, new Uint8Array(Buffer.from("not a pdf"))])).code,
+  "OPERATION_FAILED",
+);
+
 document.close();
 document.close();
 assert.equal(errorFrom(() => document.extract([1])).code, "INVALID_ARGUMENT");

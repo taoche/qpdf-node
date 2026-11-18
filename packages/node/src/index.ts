@@ -1,7 +1,9 @@
 export { QpdfError } from "./errors";
 export type { QpdfErrorCode } from "./errors";
-export { merge, pageCount, splitPages } from "./operations";
+export { merge, mergeBytes, pageCount, splitPages } from "./operations";
 export type {
+  MergeBytesInputOptions,
+  MergeBytesOptions,
   MergeInputOptions,
   MergeOptions,
   PageCountOptions,

@@ -2,6 +2,7 @@ import type * as binding from "./native-binding";
 import { native } from "./native";
 import { toQpdfError } from "./errors";
 import {
+  describe,
   invalidArgument,
   optionalPositiveUint32,
   optionalString,
@@ -34,6 +35,19 @@ export interface MergeOptions {
   output: string;
   /** Only for encrypted inputs that do not open with the empty user password. */
   password?: string;
+}
+
+/** One in-memory merge input: a whole PDF, or the pages of it selected by `pages`. */
+export interface MergeBytesInputOptions {
+  /** The PDF. Copied before the call returns; changing it afterwards has no effect. */
+  bytes: Uint8Array;
+  /** Page range with the same syntax as {@link MergeInputOptions.pages}. Omit to take every page. */
+  pages?: string;
+}
+
+export interface MergeBytesOptions {
+  /** Inputs in output order. A bare `Uint8Array` (or `Buffer`) is shorthand for `{ bytes }`. */
+  inputs: ReadonlyArray<Uint8Array | MergeBytesInputOptions>;
 }
 
 export interface SplitPagesOptions {
@@ -69,6 +83,23 @@ export interface PageCountOptions {
 export async function merge(options: MergeOptions): Promise<void> {
   try {
     await native.mergeNative(parseMergeOptions(options));
+  } catch (error) {
+    throw toQpdfError(error);
+  }
+}
+
+/**
+ * Concatenates PDFs held in memory into one unencrypted PDF and returns its
+ * bytes. Nothing is written to disk. Page selection and error codes match
+ * {@link merge}; an error message names the failing input as `inputs[i]`.
+ *
+ * Encrypted inputs that need a real password are not supported, as with
+ * {@link openPdf}. The work runs on the libuv thread pool. Rejects with
+ * {@link QpdfError}.
+ */
+export async function mergeBytes(options: MergeBytesOptions): Promise<Uint8Array> {
+  try {
+    return await native.mergeBytesNative(parseMergeBytesOptions(options));
   } catch (error) {
     throw toQpdfError(error);
   }
@@ -123,6 +154,31 @@ function parseMergeInput(label: string, input: unknown): binding.NativeMergeInpu
   return {
     path: requireNonEmptyString(`${label}.path`, fields.path),
     pages: optionalString(`${label}.pages`, fields.pages),
+  };
+}
+
+function parseMergeBytesOptions(options: unknown): binding.NativeMergeBytesOptions {
+  const fields = requireObject("mergeBytes options", options);
+  const inputs = fields.inputs;
+  if (!Array.isArray(inputs)) {
+    throw invalidArgument(
+      `mergeBytes options.inputs must be an array. received=${describe(inputs)}`,
+    );
+  }
+  return {
+    inputs: inputs.map((input, index) => {
+      const label = `mergeBytes options.inputs[${index}]`;
+      if (input instanceof Uint8Array) {
+        return { bytes: input };
+      }
+      const entry = requireObject(label, input);
+      if (!(entry.bytes instanceof Uint8Array)) {
+        throw invalidArgument(
+          `${label}.bytes must be a Uint8Array. received=${describe(entry.bytes)}`,
+        );
+      }
+      return { bytes: entry.bytes, pages: optionalString(`${label}.pages`, entry.pages) };
+    }),
   };
 }
 

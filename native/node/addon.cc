@@ -318,6 +318,52 @@ Napi::Value MergeNative(const Napi::CallbackInfo& info) {
   }
 }
 
+// mergeBytesNative(options: { inputs: { bytes: Uint8Array, pages?: string }[] }): Promise<Buffer>
+Napi::Value MergeBytesNative(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  try {
+    Napi::Object options = readObject(info[0], "mergeBytes options");
+    Napi::Value inputs = options.Get("inputs");
+    if (!inputs.IsArray()) {
+      invalidArgument("mergeBytes options.inputs must be an array. received=" + describe(inputs));
+    }
+    auto request = std::make_shared<std::vector<qpdf_node::MemoryMergeInput>>();
+    Napi::Array array = inputs.As<Napi::Array>();
+    for (std::uint32_t index = 0; index < array.Length(); ++index) {
+      std::string label = "mergeBytes options.inputs[" + std::to_string(index) + "]";
+      Napi::Object input = readObject(array.Get(index), label);
+      Napi::Value bytes = input.Get("bytes");
+      if (!bytes.IsTypedArray() || bytes.As<Napi::TypedArray>().TypedArrayType() != napi_uint8_array) {
+        invalidArgument(label + ".bytes must be a Uint8Array. received=" + describe(bytes));
+      }
+      Napi::Uint8Array data = bytes.As<Napi::Uint8Array>();
+      if (data.ByteLength() == 0) {
+        invalidArgument(label + ".bytes must not be empty. byteLength=0");
+      }
+      qpdf_node::MemoryMergeInput merge_input;
+      // The caller may reuse its buffer as soon as this call returns, so copy now.
+      merge_input.bytes = Bytes(data.Data(), data.Data() + data.ByteLength());
+      Napi::Value pages = input.Get("pages");
+      if (!pages.IsUndefined()) {
+        std::string text = readString(pages, label + ".pages");
+        try {
+          merge_input.pages = qpdf_node::PageRange::parse(text);
+        } catch (const Error& cause) {
+          invalidArgument(label + ".pages is not a valid page range: " + cause.what());
+        }
+      }
+      request->push_back(std::move(merge_input));
+    }
+    if (request->empty()) {
+      invalidArgument("merge requires at least one input. inputs=[]");
+    }
+    return PromiseWorker<Bytes>::Start(
+        env, [request] { return qpdf_node::mergeMemory(std::move(*request)); }, toBuffer);
+  } catch (const Error& error) {
+    return rejectedPromise(env, error);
+  }
+}
+
 Napi::Value SplitPagesNative(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   try {
@@ -360,6 +406,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
 
   exports.Set("openDocument", Napi::Function::New(env, OpenDocument, "openDocument"));
   exports.Set("mergeNative", Napi::Function::New(env, MergeNative, "mergeNative"));
+  exports.Set("mergeBytesNative", Napi::Function::New(env, MergeBytesNative, "mergeBytesNative"));
   exports.Set("splitPagesNative", Napi::Function::New(env, SplitPagesNative, "splitPagesNative"));
   exports.Set("pageCountNative", Napi::Function::New(env, PageCountNative, "pageCountNative"));
   exports.Set("qpdfVersion", Napi::Function::New(env, QpdfVersion, "qpdfVersion"));

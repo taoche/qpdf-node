@@ -126,6 +126,57 @@ PdfDocument openPdf(const val& input) {
   return PdfDocument(std::move(document));
 }
 
+Bytes readUint8Array(const val& input, const std::string& label) {
+  if (!input.instanceof (val::global("Uint8Array"))) {
+    throw Error(ErrorKind::InvalidArgument, label + " must be a Uint8Array");
+  }
+  size_t size = input["length"].as<size_t>();
+  if (size == 0) {
+    throw Error(ErrorKind::InvalidArgument, label + " must not be empty. byteLength=0");
+  }
+  Bytes bytes(size);
+  val(emscripten::typed_memory_view(size, bytes.data())).call<void>("set", input);
+  return bytes;
+}
+
+// mergeBytes(inputs: Array<Uint8Array | { bytes: Uint8Array, pages?: string }>): Uint8Array
+val mergeBytes(const val& inputs) {
+  Bytes merged = runOrThrow([&] {
+    if (!inputs.instanceof (val::global("Array"))) {
+      throw Error(ErrorKind::InvalidArgument, "mergeBytes inputs must be an array");
+    }
+    std::vector<qpdf_node::MemoryMergeInput> request;
+    unsigned length = inputs["length"].as<unsigned>();
+    for (unsigned index = 0; index < length; ++index) {
+      std::string label = "mergeBytes inputs[" + std::to_string(index) + "]";
+      val input = inputs[index];
+      qpdf_node::MemoryMergeInput merge_input;
+      if (input.instanceof (val::global("Uint8Array"))) {
+        merge_input.bytes = readUint8Array(input, label);
+      } else if (input.typeOf().as<std::string>() == "object" && !input.isNull()) {
+        merge_input.bytes = readUint8Array(input["bytes"], label + ".bytes");
+        val pages = input["pages"];
+        if (!pages.isUndefined()) {
+          if (pages.typeOf().as<std::string>() != "string") {
+            throw Error(ErrorKind::InvalidArgument, label + ".pages must be a string when provided");
+          }
+          try {
+            merge_input.pages = qpdf_node::PageRange::parse(pages.as<std::string>());
+          } catch (const Error& cause) {
+            throw Error(
+                ErrorKind::InvalidArgument, label + ".pages is not a valid page range: " + cause.what());
+          }
+        }
+      } else {
+        throw Error(ErrorKind::InvalidArgument, label + " must be a Uint8Array or { bytes, pages? }");
+      }
+      request.push_back(std::move(merge_input));
+    }
+    return qpdf_node::mergeMemory(std::move(request));
+  });
+  return toUint8Array(merged);
+}
+
 std::string qpdfVersion() { return qpdf_node::qpdfVersion(); }
 
 }  // namespace
@@ -136,5 +187,6 @@ EMSCRIPTEN_BINDINGS(qpdf_core) {
       .function("extract", &PdfDocument::extract)
       .function("close", &PdfDocument::close);
   emscripten::function("openPdf", &openPdf);
+  emscripten::function("mergeBytes", &mergeBytes);
   emscripten::function("qpdfVersion", &qpdfVersion);
 }

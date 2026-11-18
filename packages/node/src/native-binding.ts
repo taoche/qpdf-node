@@ -19,6 +19,15 @@ export interface NativeMergeOptions {
   password?: string;
 }
 
+export interface NativeMergeBytesInput {
+  bytes: Uint8Array;
+  pages?: string;
+}
+
+export interface NativeMergeBytesOptions {
+  inputs: NativeMergeBytesInput[];
+}
+
 export interface NativeSplitPagesOptions {
   input: string;
   outputPattern: string;
@@ -34,6 +43,7 @@ export interface NativePageCountOptions {
 export interface NativeBinding {
   openDocument(bytes: Uint8Array, password?: string): Promise<NativeDocument>;
   mergeNative(options: NativeMergeOptions): Promise<void>;
+  mergeBytesNative(options: NativeMergeBytesOptions): Promise<Uint8Array>;
   splitPagesNative(options: NativeSplitPagesOptions): Promise<void>;
   pageCountNative(options: NativePageCountOptions): Promise<number>;
   qpdfVersion(): string;

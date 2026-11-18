@@ -124,6 +124,19 @@ struct PageSelection {
 // bytes. Selections may name the same document several times.
 Bytes assemblePages(const std::vector<PageSelection>& selections);
 
+// One input of mergeMemory: a whole PDF, or the pages of it selected by `pages`.
+struct MemoryMergeInput {
+  Bytes bytes;
+  std::optional<PageRange> pages;  // empty: every page
+};
+
+// Concatenates PDFs held in memory, in order, into one unencrypted PDF. An
+// input that contributes no pages is skipped. Errors name the failing input by
+// index. Throws InvalidArgument when `inputs` is empty or an input has no bytes,
+// and OperationFailed when an input is not a readable PDF, its range names a
+// page beyond the document, or no input contributes any page.
+Bytes mergeMemory(std::vector<MemoryMergeInput> inputs);
+
 // The version of the qpdf library this core was built with, e.g. "12.4.2".
 std::string qpdfVersion();
 

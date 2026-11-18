@@ -9,6 +9,8 @@
 //   // -> { requestId: 2, ok: true, bytes: Uint8Array }   (transferred)
 //   worker.postMessage({ requestId: 3, type: "close", documentId });
 //   // -> { requestId: 3, ok: true }
+//   worker.postMessage({ requestId: 4, type: "merge", inputs: [first, { bytes: second, pages: "2-z" }] });
+//   // -> { requestId: 4, ok: true, bytes: Uint8Array }   (transferred)
 //
 // Failures reply { requestId, ok: false, code: "INVALID_ARGUMENT" | "OPERATION_FAILED", message }.
 //
@@ -41,6 +43,9 @@ self.onmessage = async (event) => {
       self.postMessage({ requestId, ok: true, documentId, pageCount: document.pageCount });
     } else if (type === "extract") {
       const bytes = requireDocument(event.data.documentId).extract(event.data.pages);
+      self.postMessage({ requestId, ok: true, bytes }, [bytes.buffer]);
+    } else if (type === "merge") {
+      const bytes = core.mergeBytes(event.data.inputs);
       self.postMessage({ requestId, ok: true, bytes }, [bytes.buffer]);
     } else if (type === "close") {
       documents.get(event.data.documentId)?.close();

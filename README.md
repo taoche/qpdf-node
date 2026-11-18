@@ -85,7 +85,15 @@ narrow strings).
 ## API
 
 ```ts
-import { merge, splitPages, pageCount, openPdf, qpdfVersion, QpdfError } from "qpdf-node";
+import {
+  merge,
+  mergeBytes,
+  splitPages,
+  pageCount,
+  openPdf,
+  qpdfVersion,
+  QpdfError,
+} from "qpdf-node";
 
 // Bytes in, bytes out. The document is parsed once and kept in memory.
 const pdf = await openPdf(bytes); // Buffer or Uint8Array
@@ -95,6 +103,10 @@ try {
 } finally {
   await pdf.close();
 }
+
+const book: Uint8Array = await mergeBytes({
+  inputs: [coverBytes, { bytes: bodyBytes, pages: "2-z" }],
+});
 
 // Path-based. A string input is shorthand for { path }.
 await merge({
@@ -161,6 +173,17 @@ runs backwards, and commas join parts in the order written. Whitespace is not al
 listed more than once (the second use is a shallow copy). Bad syntax rejects with `INVALID_ARGUMENT`
 before any file is touched; a page beyond the document rejects with `OPERATION_FAILED` and is never
 clamped. `output` must not be one of the inputs.
+
+### `mergeBytes(options): Promise<Uint8Array>`
+
+| Option   | Type                                     | Description                                                         |
+| -------- | ---------------------------------------- | ------------------------------------------------------------------- |
+| `inputs` | `Array<Uint8Array \| { bytes; pages? }>` | Inputs in output order. At least one. A `Buffer` is a `Uint8Array`. |
+
+The in-memory counterpart of `merge`: same `pages` syntax, same unencrypted output, same bytes for
+the same inputs. Nothing is written to disk, and the input buffers are copied before the call
+returns. Errors name the failing input (`inputs[1]`). Encrypted inputs that need a real password are
+not supported, as with `openPdf`.
 
 ### `splitPages(options): Promise<void>`
 
@@ -260,7 +283,7 @@ pdf.close();
 ```
 
 The WebAssembly API is **synchronous and in memory**: `openPdf(Uint8Array)`, `pageCount`,
-`extract(pages)`, `close()`, `qpdfVersion()`. It has no file-system operations (`merge`,
+`extract(pages)`, `close()`, `mergeBytes(inputs)`, `qpdfVersion()`. It has no file-system operations (`merge`,
 `splitPages`, path `pageCount` are Node-only) and no password option yet. Because a large document
 blocks while it is parsed or written, **run it in a Web Worker**. `native/wasm/qpdf-worker.mjs` is a
 ready-made worker with a small `postMessage` protocol that transfers PDF bytes instead of copying
