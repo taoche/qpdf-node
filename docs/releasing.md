@@ -1,8 +1,8 @@
 # Releasing
 
-> **Status: 0.2.1 (prepared, not yet released).** The release workflow (`.github/workflows/release.yml`)
-> is written to build and test the prebuilt addons on every supported platform, but has not run for
-> 0.2.1 yet; see [What was and was not validated](#what-was-and-was-not-validated-locally).
+> **Status: 0.2.2 is partly published.** The darwin and linux platform packages are on npm at 0.2.2;
+> `qpdf-node-win32-x64-msvc` has never been published (npm rejects the package name on first
+> publish), so the root `qpdf-node` is still at 0.2.1.
 
 Six packages, all at the same version: the five platform packages of the
 [table below](#platform-runners) and the root `qpdf-node`. The root lists every platform package in

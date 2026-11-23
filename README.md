@@ -23,17 +23,20 @@ names the missing package. Reinstall on the target machine. Requires Node.js 20 
 
 ## Supported platforms
 
-| OS / CPU             | Platform package            | Notes                             |
-| -------------------- | --------------------------- | --------------------------------- |
-| macOS, Apple silicon | `qpdf-node-darwin-arm64`    | macOS 12 or newer.                |
-| macOS, Intel         | `qpdf-node-darwin-x64`      | macOS 12 or newer.                |
-| Linux x64, glibc     | `qpdf-node-linux-x64-gnu`   | glibc 2.35 or newer.              |
-| Linux arm64, glibc   | `qpdf-node-linux-arm64-gnu` | glibc 2.35 or newer.              |
-| Windows x64          | `qpdf-node-win32-x64-msvc`  | Needs the Microsoft VC++ runtime. |
+| OS / CPU             | Platform package            | Notes                     |
+| -------------------- | --------------------------- | ------------------------- |
+| macOS, Apple silicon | `qpdf-node-darwin-arm64`    | macOS 12 or newer.        |
+| macOS, Intel         | `qpdf-node-darwin-x64`      | macOS 12 or newer.        |
+| Linux x64, glibc     | `qpdf-node-linux-x64-gnu`   | glibc 2.35 or newer.      |
+| Linux arm64, glibc   | `qpdf-node-linux-arm64-gnu` | glibc 2.35 or newer.      |
+| Windows x64          | `qpdf-node-win32-x64-msvc`  | Not published to npm yet. |
+
+Windows x64 has no prebuilt package on npm yet, so `npm install` skips it there and the loader
+reports the missing package; [build from source](https://github.com/taoche/qpdf-node/blob/main/docs/development.md)
+until it is published.
 
 Not supported: musl Linux (Alpine), 32-bit systems, Windows arm64, FreeBSD. The loader reports these
-as unsupported; [build from source](https://github.com/taoche/qpdf-node/blob/main/docs/development.md)
-there. On Windows, paths with characters outside the system code page are untested.
+as unsupported; build from source there.
 
 ## Quick start
 
